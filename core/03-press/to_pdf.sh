@@ -19,6 +19,21 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
   --no-pdf-header-footer \
   --print-to-pdf="$PDF" "file://$ABS" >/dev/null 2>&1
 [ -s "$PDF" ] || { echo "to_pdf.sh: produced no output" >&2; exit 1; }
+
+# Chrome re-encodes every embedded image on print, so a document with 30 plates lands
+# around 25MB — past what anyone will happily receive by mail. Ghostscript re-compresses
+# to roughly an eighth of that with no visible loss at reading size. Skipped silently if
+# ghostscript is absent; the uncompressed file is still correct, just heavy.
+if command -v gs >/dev/null 2>&1; then
+  RAW="${PDF%.pdf}.raw.pdf"; mv "$PDF" "$RAW"
+  if gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.5 -dPDFSETTINGS=/ebook \
+        -dNOPAUSE -dQUIET -dBATCH -sOutputFile="$PDF" "$RAW" 2>/dev/null && [ -s "$PDF" ]; then
+    rm -f "$RAW"
+  else
+    mv "$RAW" "$PDF"
+    echo "to_pdf.sh: ghostscript pass failed; keeping the uncompressed file" >&2
+  fi
+fi
 PAGES="$(python3 - "$PDF" <<'PYEOF'
 import re, sys, zlib
 b = open(sys.argv[1], "rb").read()

@@ -27,6 +27,7 @@ Everything lands in `~/.claude/` and `~/harness/`. **Nothing goes in your team's
 | `core/01-memory` | durable memory + capability registry over MCP; notes are markdown in a git repo, every write committed |
 | `core/02-session` | session identity, a session index, and the Stop guard **retargeted** at conclusions |
 | `core/03-press` | markdown → magazine-format document → PDF, with a claim gate that fails the build when a stated fact stops tracing |
+| `core/04-journal` | decisions, friction and ideas in one command; the day rolls itself up on every stop |
 
 ## The one behaviour change that matters
 

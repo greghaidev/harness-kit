@@ -1,0 +1,17 @@
+# Optional. The Stop hook already rolls the day on every session end, so this only matters
+# for a day you never opened a session — it closes the day rather than leaving it unrolled.
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp daily.service.example ~/.config/systemd/user/harness-journal.service
+#   cp daily.timer.example   ~/.config/systemd/user/harness-journal.timer
+#   systemctl --user daemon-reload && systemctl --user enable --now harness-journal.timer
+#
+[Unit]
+Description=Roll up the harness journal for the day
+
+[Timer]
+OnCalendar=*-*-* 18:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

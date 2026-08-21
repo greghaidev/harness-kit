@@ -114,6 +114,26 @@ about the technology**, in that order.
   when a stated fact stops tracing**. Use it for anything that will be read by someone who
   can challenge it.
 
+## Journaling — one command, not a habit
+
+A conclusion is recorded by the terminal verbs above. Three other things are worth keeping and
+none of them is a terminal state, so nothing forces them:
+
+```
+journal.py note "<what>" --kind decision --why "<the reasoning>"
+journal.py note "<what>" --kind friction
+journal.py note "<what>" --kind idea
+journal.py note "<what>" --kind question
+```
+
+Write one the moment it happens, not at the end. **A decision without its reasoning is worth
+very little in three months**, and the moment you make it is the cheapest it will ever be to
+write down. Friction is worth capturing even when it seems small — the point of recording it
+is that it recurs.
+
+The day rolls itself up on every stop. You never have to remember to journal; you only have to
+remember to note the thing, and the agent should be doing that for you as it happens.
+
 ## Memory
 
 Query the store before proposing anything in an area — never assume a greenfield. Write a

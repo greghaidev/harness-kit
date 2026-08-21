@@ -72,11 +72,11 @@ keep going" as permanently granted. Ending a turn with a promise ("Continuing",
 about tool calls.
 
 Continue the work now. If it is genuinely finished, clear the queue:
-    python3 scripts/continuation.py done <item-id>      # one item
-    python3 scripts/continuation.py clear               # all of it
+    python3 ~/harness/core/02-session/continuation.py done <item-id>      # one item
+    python3 ~/harness/core/02-session/continuation.py clear               # all of it
 If you are blocked on a decision only you can make, record it and stop — that is a
 legitimate reason to end the turn; running out of momentum is not:
-    python3 scripts/continuation.py hold "<what you need decided>"
+    python3 ~/harness/core/02-session/continuation.py hold "<what you need decided>"
 """
 
 
@@ -107,6 +107,14 @@ Say where it stands, in one command:
 know." Turning every unresolved limit into queued work distorts the record rather than
 improving it. Declaring the limit is the honest terminal state; silence is not.
 
+A conclusion is not the only thing worth keeping. If this session also produced a DECISION,
+hit FRICTION, or turned up an IDEA, those are not terminal states and will not be captured
+by anything above — record them directly:
+
+    python3 ~/harness/core/04-journal/journal.py note "<what>" --kind decision --why "<why>"
+    python3 ~/harness/core/04-journal/journal.py note "<what>" --kind friction
+    python3 ~/harness/core/04-journal/journal.py note "<what>" --kind idea
+
 --- the original task-shaped guidance still applies below ---
 
 This session did real work and has not said where it stands.
@@ -115,9 +123,9 @@ An empty continuation queue is not the same as "nothing left to do" — it is th
 every premature stop so far: a chunk lands, the worktree is clean, nothing is queued, and
 the turn ends on a promise. Say which it is, in one command:
 
-    python3 scripts/continuation.py add "<the next piece of work>"   # more to do -> then DO it
-    python3 scripts/continuation.py hold "<what you need the operator to decide>"  # their call, not yours
-    python3 scripts/continuation.py clear                            # genuinely finished
+    python3 ~/harness/core/02-session/continuation.py add "<the next piece of work>"   # more to do -> then DO it
+    python3 ~/harness/core/02-session/continuation.py hold "<what you need the operator to decide>"  # their call, not yours
+    python3 ~/harness/core/02-session/continuation.py clear                            # genuinely finished
 
 Pick by what the operator ASKED FOR, not by whether you have momentum left:
 

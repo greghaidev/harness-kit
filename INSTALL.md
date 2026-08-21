@@ -79,6 +79,25 @@ claude mcp add --scope user harness-memory -- \
 a later session can find this one; a session index; and the Stop guard, **retargeted** (see
 Phase 2 — this is the one behaviour change that matters).
 
+**`core/04-journal` — capture that is not remembered.** The terminal verbs above record a
+*conclusion*. A session also produces decisions, friction and ideas, and none of those are
+terminal states, so nothing above would catch them:
+
+```bash
+journal.py note "<what>" --kind decision --why "<the reasoning>"
+journal.py note "<what>" --kind friction     # the tooling cost you time; it will again
+journal.py note "<what>" --kind idea
+journal.py day                               # today's roll-up
+```
+
+The roll-up is **generated on every stop**, by the same hook that enforces the terminal state
+— capture as a side effect of a gate that already runs, rather than as a second thing to
+remember. It is idempotent, backgrounded, and its exit code is discarded, so a broken journal
+can never affect whether a turn is allowed to end.
+
+Optionally install `core/04-journal/daily.{timer,service}.example` as a user timer; that only
+matters for a day with no session at all, which the Stop hook cannot see.
+
 **`core/03-press` — the document engine.** Markdown in, a finished magazine-format document
 out, with a claim gate that fails the build when a stated fact stops tracing. Run its tests:
 `~/harness/.venv/bin/python -m pytest ~/harness/core/03-press/test_press_kit.py -q`.

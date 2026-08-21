@@ -1,0 +1,7 @@
+[Unit]
+Description=Roll up the harness journal for the day
+
+[Service]
+Type=oneshot
+Environment=HARNESS_HOME=%h/harness
+ExecStart=/usr/bin/python3 %h/harness/core/04-journal/journal.py roll --quiet

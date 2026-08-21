@@ -199,6 +199,35 @@ def _press_pdf():
     return bool(chrome), chrome or "no chrome/chromium — HTML still builds, PDF will not"
 
 
+# ---------------------------------------------------------------- journal
+@check("04-journal", "records a note and rolls it into the day")
+def _journal():
+    import subprocess, tempfile
+    jp = CORE / "04-journal" / "journal.py"
+    if not jp.exists():
+        return False, "journal.py missing"
+    env = dict(os.environ, HARNESS_HOME=str(HOME))
+    with tempfile.TemporaryDirectory() as d:
+        env["CLAUDE_PROJECT_DIR"] = d
+        a = subprocess.run([sys.executable, str(jp), "note", "harness verify probe",
+                            "--kind", "friction"], capture_output=True, text=True, env=env)
+        b = subprocess.run([sys.executable, str(jp), "roll"],
+                           capture_output=True, text=True, env=env)
+    ok = a.returncode == 0 and b.returncode == 0 and "harness verify probe" in b.stdout
+    return ok, (a.stderr or b.stderr or "note -> roll -> day round-tripped")[:110]
+
+
+@check("04-journal", "the Stop guard rolls the day, and cannot be broken by it")
+def _journal_wired():
+    body = (CORE / "02-session" / "unfinished-work-stop-guard.sh").read_text()
+    line = [l for l in body.split("\n") if "$JOURNAL" in l and " roll" in l]
+    if not line:
+        return False, "Stop guard does not invoke the journal"
+    l = line[0]
+    safe = "|| true" in l and ">/dev/null" in l and "timeout" in l and l.rstrip().endswith("&")
+    return safe, "backgrounded, timed out, output discarded" if safe else f"UNSAFE: {l.strip()}"
+
+
 # ---------------------------------------------------------------- agreement
 @check("00-agreement", "operating agreement is installed and fully filled in")
 def _agreement():

@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import pathlib
 
 HERE = pathlib.Path(__file__).resolve().parent
-ART = HERE.parent
+# Illustrations live beside the DOCUMENT, not beside the press, so one press can render
+# several documents each with their own plates. PRESS_ART_DIR names that directory.
+ART = pathlib.Path(os.environ.get("PRESS_ART_DIR", HERE.parent))
 ILLO = ART / "illustrations" / "robots"
 WEB = ILLO / "web"
 MANIFEST = ART / "illustrations" / "plates.json"
