@@ -11,6 +11,19 @@
 #
 # Rationale, loop-safety and the reason it cannot simply read the closing message:
 # .claude/hooks/unfinished_work_lib.py
+#
+# It also rolls the day's journal. That is deliberate placement: capture that depends on
+# anyone REMEMBERING to capture is the rung of the ladder this kit argues decays, so the
+# roll-up is a side effect of a gate that already runs on every single stop. It is
+# idempotent, backgrounded, and its output and exit code are discarded — a broken journal
+# must never be able to affect a stop decision.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec python3 "$HERE/unfinished_work_lib.py"
+KIT="$(cd "$HERE/../.." && pwd)"
+JOURNAL="$KIT/core/04-journal/journal.py"
+
+INPUT="$(cat)"
+if [ -f "$JOURNAL" ]; then
+  ( timeout 20s python3 "$JOURNAL" roll --quiet >/dev/null 2>&1 || true ) &
+fi
+printf '%s' "$INPUT" | exec python3 "$HERE/unfinished_work_lib.py"

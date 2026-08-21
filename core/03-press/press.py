@@ -87,10 +87,14 @@ def parse_blocks(lines: list[str]) -> list[tuple]:
             blocks.append(("code", lang, "\n".join(buf)))
             continue
 
+        m = re.match(r"^<!--\s*plate:\s*([\w-]+)\s*-->$", ln.strip())
+        if m:
+            blocks.append(("plate", m.group(1))); i += 1; continue
+
         if ln.strip().startswith("<!--"):
             raise SystemExit(
                 f"press.py: unrecognised directive at line {i+1}: {ln.strip()!r}\n"
-                "  this press defines none — remove it or add a branch here.")
+                "  known: plate: — remove it or add a branch here.")
 
         if (ln.startswith("|") and i + 1 < len(lines)
                 and set(lines[i+1].replace("|", "").strip()) <= set("-: ")):
@@ -264,6 +268,10 @@ def render(md: str, root: pathlib.Path, *, title: str, wordmark: str, eyebrow: s
             paras = [" ".join(p.split()) for p in re.split(r"\n\s*\n", body) if p.strip()]
             out.append(f'<div class="{cls}"><p class="lbl">{html.escape(lbl) or "Note"}</p>'
                        + "".join(f"<p>{inline(p)}</p>" for p in paras) + "</div>")
+        elif k == "plate":
+            pl = _plates.plate(b[1])
+            if pl:
+                out.append(pl)
         elif k == "table":
             out.append(render_table(b[1], b[2]))
 

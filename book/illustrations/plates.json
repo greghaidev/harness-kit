@@ -1,0 +1,13 @@
+{
+  "_comment": "anchor -> plate key; anchors derive from heading text via press.anchor_for()",
+  "hero": "robot-00-hero",
+  "plates": {
+    "s-00-your-agent-forgets-everything-and-tha": "robot-00-section",
+    "s-01-the-platform-gives-you-eight-things-a": "robot-01-section",
+    "s-02-a-session-that-cannot-end-badly": "robot-02-section",
+    "s-03-claims-are-the-unit-of-work": "robot-11-section",
+    "s-04-a-document-that-fails-its-own-build": "robot-12-section",
+    "s-05-what-this-cannot-do": "robot-13-section",
+    "s-getting-it-running": "robot-int-05"
+  }
+}
