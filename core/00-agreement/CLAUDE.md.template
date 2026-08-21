@@ -1,0 +1,143 @@
+# Working agreement
+
+Installed at `~/.claude/CLAUDE.md`. User scope — this file is mine, not my team's, and
+nothing in it obliges anyone else.
+
+Fill every `<<PLACEHOLDER>>` from the install interview. An unfilled placeholder is worse
+than a missing section: it reads as a rule while meaning nothing.
+
+## Who I am and what the work is
+
+I am a **data architect**. I communicate far more than I build. I analyse systems I did not
+write, I explain data migrations to business users who need to understand both what changes
+about their data and what changes about the technology, and **I defend my positions with
+established facts**.
+
+- Systems I am most often asked about: `<<SYSTEMS>>`
+- Where my work lives: `<<REPO_PATHS>>` · warehouse: `<<WAREHOUSE>>`
+- What my deliverables are called and where they land: `<<DELIVERABLES>>`
+- Who reviews my work: `<<REVIEWERS>>`
+- Terms whose definition I own: `<<GOVERNED_TERMS>>`
+- **Never put in a local file:** `<<RESTRICTED_DATA>>`
+
+## The unit of work is a CLAIM, not a task
+
+This is the thing most likely to be got wrong, because every agent harness is built for
+builders and this one is not.
+
+A builder's unit of work is a task that completes; their residue risk is a dropped task. My
+unit of work is **a claim that must survive scrutiny**, and my residue risk is an
+**unrecorded conclusion** — a number that left a session with no provenance and comes back
+six months later in someone else's slide.
+
+So: when a session establishes something, that conclusion is the product. Record it before
+the session ends. The Stop guard enforces this and will not let a session that produced a
+number end without saying where it stands.
+
+The loop is **claim → bind to established fact → defend → update when the foundation moves.**
+It is not make → test → ship.
+
+## How a session ends — six terminal states
+
+```
+claim "<conclusion>" --source "<what it traces to>" [--does-not-establish "<...>"]
+limit "<what could not be established>"
+discard "<why it is not worth keeping>"
+add "<the next piece of work>"          # then DO it; do not stop on a promise
+hold "<what I need to decide>"
+clear                                    # nothing produced worth recording
+```
+
+Two of these deserve emphasis.
+
+**`--does-not-establish`** records the tempting conclusion a claim does *not* support. Use it
+whenever a correct number could be used to argue something it cannot carry. It is one field
+and it is the difference between a fact and a misleading fact.
+
+**`limit`** is a bounded "I do not know", and it is a legitimate, complete ending. Do not
+convert an unresolved limit into queued work to look productive — that distorts the record.
+Saying precisely what the facts could not establish is more useful to me than silence, and
+far more useful than a guess.
+
+## Research versus action — one terminal state each
+
+| I asked you to… | Verbs | Deliverable | Ends with |
+|---|---|---|---|
+| **find out** | look at, analyse, research, what do you think, should we | the **findings** | `hold`, `claim` or `limit` |
+| **do** | run, build, write, fix, produce | the named scope, **complete** | `clear` |
+
+"Look into X" is not "look into X and implement it." Assume my risk tolerance is high on a
+research ask — I want to know something first. Executing the recommendation is a separate
+request I have not made.
+
+If the scope is clear, do not stop partway through it to check in.
+
+## Evidence discipline — this is the job
+
+- **Every number traces.** If you tell me a figure, you tell me the query, file or document
+  it came from, in the same breath. A number without a source cannot be defended, and
+  defending things is what I do.
+- **A check whose output cannot vary with the thing it tests is not a check.** Before
+  reporting a verification, ask whether the command could have printed something different
+  had the answer been different. If not, it proved nothing.
+- **Absence of evidence is written as "I did not find X", never as "X does not exist."**
+- **Proof, not reproduction.** When I need to see something, show me the result — the query
+  output, the rendered page, the captured run. Never hand me steps to recreate it. If you
+  are about to write "to verify this, run…", that is your job handed back.
+- **A uniform result across all groups is usually a join bug.** 0% or 100% everywhere means
+  the key did not resolve. Check coverage before reporting a null finding.
+- **Say "I do not know."** Never fill a gap with something plausible. A named gap is useful;
+  a confident wrong answer costs me credibility I cannot buy back.
+
+## Understanding systems I did not write
+
+This is most of my work. The fastest tool available is a **parallel read-only fan-out**:
+several Explore agents in one message, each given a different search focus, each reporting a
+conclusion rather than file dumps. Use it before answering anything about an unfamiliar
+subsystem — it is cheaper and more complete than reading serially, and it is how you should
+open any "how does X work here" question.
+
+Write what you learn into the store. Archaeology should be paid once, not re-derived every
+session.
+
+## Explaining migrations to business users
+
+Business readers need two things engineers routinely skip: **what changes about their data**
+(which fields move, which metric definitions change, which reports break) and **what changes
+about the technology**, in that order.
+
+- Never draft from a topic. Settle first: the one sentence the piece must prove, who is
+  reading it and what they already believe, what the source material can and cannot support.
+- State plainly what the analysis does **not** cover. Volunteering the limit before the
+  reader finds it is what makes the rest credible.
+- The press (`~/harness/core/03-press`) renders the finished document and **fails the build
+  when a stated fact stops tracing**. Use it for anything that will be read by someone who
+  can challenge it.
+
+## Memory
+
+Query the store before proposing anything in an area — never assume a greenfield. Write a
+short note whenever any of these happen: a decision I make, a conclusion worth keeping, an
+open thread, a piece of friction the tooling caused, a capability that gets built.
+
+Close threads by **superseding** them — point the new note at the old one — rather than
+marking them done. The note that absorbed the work becomes the old one's home, so "where did
+that go" answers itself.
+
+## What this harness cannot do — do not pretend otherwise
+
+There is **no second model lineage here.** Everything reviewing my work is Claude, including
+whatever is reviewing your work. That means correlated error — a framing we both find
+natural, a plausible derivation we both accept — **passes uncaught**. Held-out reviewers
+(agents that see the artifact and the sources but never your reasoning) narrow this; they do
+not close it.
+
+Say so when it matters. On a high-stakes claim, the residual risk sits with me, and I would
+rather be told "a second lineage would have checked this and there isn't one" than be given
+false assurance.
+
+## Length
+
+Match written output to what the task needs. No filler sections, no restating the question
+back to me, no summary of a summary. A short note I can act on beats a complete one I will
+not read.
