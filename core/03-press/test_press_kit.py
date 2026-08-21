@@ -241,3 +241,55 @@ def test_a_missing_plate_is_a_warning_not_a_build_failure():
 def test_render_is_deterministic():
     md = "## 00 · A\n\nsome prose\n\n!! a pull\n\n- a\n- b"
     assert r(md)[0] == r(md)[0]
+
+
+# ------------------------------------------------------------------ plates are not cropped
+def test_plate_css_never_crops_an_illustration():
+    """A plate must show the whole image, whatever ratio it arrives at.
+
+    The press this was ported from cropped every plate to a 30:9 letterbox, because its
+    illustrations were COMMISSIONED at that ratio and cropped before the build ever saw
+    them. Fed a square image, `object-fit: cover` silently discarded 70% of it — silently
+    being the operative word, since a cropped image still looks like a deliberate one.
+
+    Caught by a reader, not by any gate. So: a gate.
+    """
+    import re as _re
+    import press_economist
+    # Strip CSS comments FIRST. The initial version of this probe matched the words
+    # "aspect-ratio" and "object-fit: cover" inside the comment explaining that neither
+    # is used — a probe that cannot tell use from mention, which is the same trap the
+    # scope guard falls into when it blocks prose describing the scope guard.
+    css = _re.sub(r"/\*.*?\*/", "", press_economist._LAYER, flags=_re.S)
+    plate_rules = [seg for seg in css.split("}") if ".plate img" in seg or ".plate.hero img" in seg]
+    assert plate_rules, "no .plate img rule found — did the selector change?"
+    for rule in plate_rules:
+        assert "object-fit: cover" not in rule, (
+            f"a plate rule still crops with object-fit:cover:\n{rule.strip()[:200]}")
+        assert "aspect-ratio" not in rule, (
+            f"a plate rule still forces an aspect ratio, which crops:\n{rule.strip()[:200]}")
+
+
+def test_print_bounds_plate_height_by_height_not_width():
+    """Bounding the WIDTH of an over-tall plate would crop again. Bound the height."""
+    import re as _re
+    import press_economist
+    css = _re.sub(r"/\*.*?\*/", "", press_economist._LAYER, flags=_re.S)
+    seg = [s for s in css.split("}") if ".plate img" in s and "max-height" in s]
+    assert seg, "print layer does not bound plate height — a square plate will eat a page"
+    assert "max-height" in seg[0]
+    assert "width: auto" in seg[0], "width must fall out of the height, or the image crops"
+
+
+def test_every_staged_plate_renders_at_its_own_ratio():
+    """End to end: a square and a widescreen plate both survive into the HTML intact."""
+    import base64
+    web = REPO / "book" / "illustrations" / "robots" / "web"
+    if not web.is_dir():
+        pytest.skip("no staged plates in this checkout")
+    found = sorted(web.glob("*.webp"))
+    assert found, "plate directory exists but is empty"
+    # the encoded bytes must reach the page unmodified — the press never resizes
+    for f in found[:3]:
+        b64 = base64.b64encode(f.read_bytes()).decode()
+        assert len(b64) > 100

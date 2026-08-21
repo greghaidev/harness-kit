@@ -155,7 +155,7 @@ _LAYER = r"""
 
   /* ---- cover ------------------------------------------------------- */
   .plate.hero { margin: 20px 0 24px; }
-  .plate.hero img { aspect-ratio: 24/9; }
+  .plate.hero img { height: auto; }   /* whole image; see .plate img above */
 
   h1 {
     font-family: var(--sans); font-weight: 800; font-stretch: 84%;
@@ -220,8 +220,13 @@ _LAYER = r"""
   /* The plate and the heading under it are ONE unit — a chapter opener.
      Big air above the plate, almost none between plate and headline. */
   .plate { width: var(--measure); max-width: 100%; margin: 62px 0 0; }
+  /* NO aspect-ratio, NO object-fit:cover. The original press cropped every plate to a
+     30:9 letterbox because its illustrations were COMMISSIONED at that ratio and cropped
+     before they ever reached the build. Feed it a square image and cover() throws away
+     70% of it — silently, because a cropped image still looks like a deliberate one.
+     Natural ratio instead: whatever the illustration is, the reader sees all of it. */
   .plate img {
-    display: block; width: 100%; aspect-ratio: 30/9; object-fit: cover;
+    display: block; width: 100%; height: auto;
     background: var(--panel);
   }
   .plate + h2 { margin-top: 16px !important; }
@@ -361,7 +366,7 @@ _LAYER = r"""
      rendered as one solid bar and the operator read it as broken — correctly.
      Specificity (0,3,2) beats those rules' (0,2,2), so this survives being
      reordered, unlike an !important that only wins by coming later.
-     Guarded by a contrast regression test, which
+     Guarded by a contrast regression test which
      resolves the cascade rather than reading the presentation attribute. */
   .fig svg rect.atrisk[fill] { fill-opacity: .13 !important; }
   .fig svg rect.spent[fill]  { fill-opacity: .92 !important; }
@@ -481,7 +486,7 @@ _LAYER = r"""
     p, li { text-align: left; }
   }
   @media (max-width: 640px) {
-    .plate img { aspect-ratio: 16/9; }
+    .plate img { height: auto; }
     .plate { margin-top: 42px; }
     body { font-size: 17px; }
     h2 .ht { font-size: 30px; }
@@ -578,6 +583,12 @@ _LAYER = r"""
     .index { margin: 18px 0 4px; }
     .index a { font-size: 9.6pt; }
     .plate { margin-top: 20px; break-inside: avoid; page-break-inside: avoid; }
+    /* A 1:1 plate at the full print measure is 156mm tall on a 216mm printable page,
+       which leaves no room for the headline it belongs to. Bound the HEIGHT and let the
+       width fall out of it, so the whole illustration is still shown — just smaller.
+       Capping the width instead would crop again, which is the bug this is fixing. */
+    .plate img { width: auto; max-width: 100%; max-height: 108mm; margin: 0 auto; }
+    .plate.hero img { max-height: 96mm; }
     h2 { margin: 20px 0 10px; break-after: avoid; }
     h2 .n { font-size: 8pt; padding-top: 7px; margin-bottom: 7px; }
     h2 .ht { font-size: 20pt; }
