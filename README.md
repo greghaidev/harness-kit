@@ -28,6 +28,7 @@ Everything lands in `~/.claude/` and `~/harness/`. **Nothing goes in your team's
 | `core/02-session` | session identity, a session index, and the Stop guard **retargeted** at conclusions |
 | `core/03-press` | markdown → magazine-format document → PDF, with a claim gate that fails the build when a stated fact stops tracing |
 | `core/04-journal` | decisions, friction and ideas in one command; the day rolls itself up on every stop |
+| `core/05-lanes` | the parallel-work board — one holder per workstream, an approval gate, and one surface for everything waiting on you |
 
 ## The one behaviour change that matters
 
