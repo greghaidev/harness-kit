@@ -98,9 +98,33 @@ can never affect whether a turn is allowed to end.
 Optionally install `core/04-journal/daily.{timer,service}.example` as a user timer; that only
 matters for a day with no session at all, which the Stop hook cannot see.
 
+**`core/05-lanes` — the parallel-work board.** Two problems, one shape. Outward: *what is
+happening to my request* has no home, so you rebuild the answer from scratch every time.
+Inward: nothing stops two of your own agent sessions editing the same files at once.
+
+```bash
+lanes.py lane-add L1 --title "<a workstream>" --rank 1
+lanes.py add L1 --title "<short>" --what "<the work>" --origin me
+lanes.py pick                      # claims the lane and the top item in one step
+lanes.py needs-you                 # only what is gated on you, each with its command
+lanes.py reconcile --apply         # close what provably shipped
+```
+
+Write `~/harness/lanes.json` from the Phase 0 answers — at minimum `repo` (the shared repo whose
+merged PRs are the ground truth for "did this ship"), `trunk`, and `series` named after how their
+work actually divides. Without `repo`, every ground-truth check reports SKIPPED: it will not block
+them, but the board can no longer close anything by itself. `lanes.py config` prints what is in
+force.
+
+One setting deserves a sentence with the operator rather than a default: `agent_auto_approve_tiers`
+lets an agent-filed item skip their approval. It ships nothing on its own — approval is only
+dispatch-eligibility — but it does drop that item off `needs-you`, and the bucket that looks
+routine at intake is the bucket they most want to see. Ask before widening it past `["green"]`.
+
 **`core/03-press` — the document engine.** Markdown in, a finished magazine-format document
 out, with a claim gate that fails the build when a stated fact stops tracing. Run its tests:
-`~/harness/.venv/bin/python -m pytest ~/harness/core/03-press/test_press_kit.py -q`.
+`~/harness/.venv/bin/python -m pytest ~/harness/core/03-press/test_press_kit.py -q`, and the
+lane board's: `~/harness/.venv/bin/python -m pytest ~/harness/core/05-lanes/test_lanes.py -q`.
 
 **`core/00-agreement` — the operating agreement.** Copy `CLAUDE.md.template` to
 `~/.claude/CLAUDE.md` and fill every `<<ANGLE BRACKET>>` from the Phase 0 answers. Leave no
@@ -180,6 +204,8 @@ Then prove the loop end to end, in front of the operator, rather than asserting 
 2. Record a claim, then let the session try to stop, and show that it is allowed to.
 3. Run a query-shaped command with no declaration, try to stop, and show that it is blocked.
 4. Build `~/harness/core/03-press/` sample markdown into a PDF and open it.
+5. Claim a lane, then try to claim a second lane declaring one of the same files, and show the
+   refusal. That refusal is the only reason to trust the board with two sessions open.
 
 ## Phase 4 — Stop. Do not install the menu.
 

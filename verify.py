@@ -49,7 +49,8 @@ def _load(path: pathlib.Path, name: str):
 # ---------------------------------------------------------------- layout
 @check("layout", "kit is installed at HARNESS_HOME")
 def _layout():
-    missing = [p for p in ("core/01-memory", "core/02-session", "core/03-press")
+    missing = [p for p in ("core/01-memory", "core/02-session", "core/03-press",
+                          "core/05-lanes")
                if not (HOME / p).is_dir()]
     return (not missing), f"{HOME}" + (f" MISSING {missing}" if missing else "")
 
@@ -237,6 +238,86 @@ def _agreement():
     body = p.read_text()
     left = body.count("<<")
     return left == 0, "complete" if left == 0 else f"{left} placeholder(s) still unfilled"
+
+
+# ---------------------------------------------------------------- lanes
+#
+# These run against a THROWAWAY store rather than the installed one. Every other check here can
+# write a probe note and leave it; a lane probe would leave a fake lane, a fake lock and a fake
+# item on the board the operator is about to start trusting. Proving the binary works on this
+# machine must not cost them a board they have to clean up first.
+
+def _lanes_sandbox(*args, **kw):
+    d = pathlib.Path(tempfile.mkdtemp(prefix="harness-lanes-verify-"))
+    try:
+        for t in ("work", "meta"):
+            (d / t).mkdir()
+            for cmd in (["init", "-q"], ["config", "user.email", "a@b.c"],
+                        ["config", "user.name", "t"]):
+                subprocess.run(["git", *cmd], cwd=d / t, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        env = {**os.environ, "HARNESS_HOME": str(HOME),
+               "HARNESS_WORK_STORE": str(d / "work"), "HARNESS_META_STORE": str(d / "meta"),
+               "HARNESS_LANES_CONFIG": str(d / "lanes.json"), **kw}
+        if "HARNESS_UNATTENDED" not in kw:
+            env.pop("HARNESS_UNATTENDED", None)
+        runs = []
+        for argv in args:
+            runs.append(subprocess.run([sys.executable, str(CORE / "05-lanes" / "lanes.py"), *argv],
+                                       capture_output=True, text=True, env=env, timeout=120))
+        return runs
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+@check("05-lanes", "the board runs and reads the installed store")
+def _lanes_runs():
+    r = subprocess.run([sys.executable, str(CORE / "05-lanes" / "lanes.py"), "board"],
+                       capture_output=True, text=True, timeout=120,
+                       env={**os.environ, "HARNESS_HOME": str(HOME)})
+    ok = r.returncode == 0 and "Lane board" in r.stdout
+    return ok, (r.stderr.strip().splitlines() or ["rendered"])[-1][:110] if not ok else "rendered"
+
+
+@check("05-lanes", "a lock is read back before it is reported")
+def _lanes_readback():
+    add, claim = _lanes_sandbox(
+        ["lane-add", "L1", "--title", "probe"],
+        ["claim", "L1", "--task", "probe", "--surfaces", "etl/probe.sql"])
+    ok = claim.returncode == 0 and "read-back OK" in claim.stdout
+    return ok, "claim confirmed by re-reading the note" if ok else claim.stderr.strip()[:110]
+
+
+@check("05-lanes", "a surface collision is refused")
+def _lanes_collision():
+    *_, second = _lanes_sandbox(
+        ["lane-add", "L1", "--title", "a"], ["lane-add", "L2", "--title", "b", "--rank", "2"],
+        ["claim", "L1", "--task", "one", "--surfaces", "etl/dim_customer.sql"],
+        ["claim", "L2", "--task", "two", "--surfaces", "etl/dim_customer.sql"])
+    ok = second.returncode != 0 and "surface collision" in second.stderr
+    return ok, "refused" if ok else f"NOT refused (rc={second.returncode})"
+
+
+@check("05-lanes", "an unattended session cannot approve")
+def _lanes_approval_gate():
+    *_, approve = _lanes_sandbox(
+        ["lane-add", "L1", "--title", "a"],
+        ["add", "L1", "--title", "x", "--what", "w", "--origin", "agent", "--tier", "red"],
+        ["approve", "l1-x", "--evidence", "quote: approved verbally"],
+        HARNESS_UNATTENDED="1")
+    ok = approve.returncode != 0 and "unattended" in approve.stderr
+    return ok, "refused" if ok else f"NOT refused (rc={approve.returncode})"
+
+
+@check("05-lanes", "an unrunnable ground-truth check reports itself")
+def _lanes_honest_skip():
+    *_, rec = _lanes_sandbox(
+        ["lane-add", "L1", "--title", "a"],
+        ["add", "L1", "--title", "x", "--what", "w", "--origin", "me"],
+        ["item-set", "l1-x", "--artifact", "PR #412"],
+        ["reconcile"])
+    ok = "SKIPPED" in rec.stdout and "Nothing to close" in rec.stdout
+    return ok, "says SKIPPED rather than rendering a clean board" if ok else rec.stdout[-110:]
 
 
 # ---------------------------------------------------------------- report
