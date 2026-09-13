@@ -47,7 +47,7 @@ the store before installing anything.
 ## Phase 1 — Install the core
 
 The core is not optional and is not a menu item: it is the substrate the rest needs. Install
-all four.
+all of it.
 
 ```bash
 mkdir -p ~/harness ~/harness/store/work ~/harness/store/meta
@@ -121,10 +121,39 @@ lets an agent-filed item skip their approval. It ships nothing on its own — ap
 dispatch-eligibility — but it does drop that item off `needs-you`, and the bucket that looks
 routine at intake is the bucket they most want to see. Ask before widening it past `["green"]`.
 
+**`core/06-hygiene` — the retirement path.** Everything above this line creates. Nothing
+retires any of it, and a store with a creating force and no closing force fills with items that
+read as open and are not — at which point the operator stops trusting the list, and an untrusted
+list still costs them the reading.
+
+```bash
+hygiene.py sweep                   # DETECT — mechanical, changes nothing, safe to automate
+hygiene.py status                  # one line: what is stale, and how old the last sweep is
+hygiene.py reconcile               # dry run: what could close, and why the rest may not
+hygiene.py reconcile --apply       # close it, by supersession, never by rewriting a note
+```
+
+It reads the same `lanes.json` — it needs the same `repo` and `pr_cli`, and two config files
+answering one question is how a system acquires two answers. Add a `hygiene` block only to change
+a default; `hygiene.py config` prints what is in force.
+
+Two things to set up with the operator rather than silently:
+
+- **`retired_phrases` ships empty and says so in every report.** It cannot be defaulted: the
+  phrases are the name of a process *they* abandoned, a tool they stopped using, a review step
+  that no longer exists. Ask for two or three now, and tell them to add one each time they retire
+  something — otherwise the documents that still describe the old way keep teaching every new
+  agent to work that way.
+- **Install `weekly.timer.example`.** The sweep changes nothing, so it is safe unattended, and it
+  is what makes the status line able to alarm at all: it reports the age of the last sweep, so a
+  dead timer becomes visible at the next session start instead of looking exactly like a store
+  with nothing wrong in it. **`reconcile --apply` is never automated** — it closes commitments,
+  and that wants someone reading the evidence.
+
 **`core/03-press` — the document engine.** Markdown in, a finished magazine-format document
 out, with a claim gate that fails the build when a stated fact stops tracing. Run its tests:
 `~/harness/.venv/bin/python -m pytest ~/harness/core/03-press/test_press_kit.py -q`, and the
-lane board's: `~/harness/.venv/bin/python -m pytest ~/harness/core/05-lanes/test_lanes.py -q`.
+lane board's and the hygiene pass's: `~/harness/.venv/bin/python -m pytest ~/harness/core/05-lanes/test_lanes.py ~/harness/core/06-hygiene/test_hygiene.py -q`.
 
 **`core/00-agreement` — the operating agreement.** Copy `CLAUDE.md.template` to
 `~/.claude/CLAUDE.md` and fill every `<<ANGLE BRACKET>>` from the Phase 0 answers. Leave no
@@ -175,7 +204,9 @@ Wire the Stop hook into `~/.claude/settings.json` (user scope, never the repo):
   "hooks": {
     "SessionStart": [{ "hooks": [
       { "type": "command",
-        "command": "~/harness/.venv/bin/python ~/harness/core/01-memory/session_context.py" }
+        "command": "~/harness/.venv/bin/python ~/harness/core/01-memory/session_context.py" },
+      { "type": "command",
+        "command": "~/harness/.venv/bin/python ~/harness/core/06-hygiene/hygiene.py status" }
     ]}],
     "Stop": [{ "hooks": [
       { "type": "command",

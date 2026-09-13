@@ -134,6 +134,30 @@ Three more boundaries worth knowing before you rely on it:
   close nothing and says so on every run. It fails visibly rather than quietly, which is the most
   the design can do — but a board nobody configured is a board that never closes anything.
 
+## 10. Hygiene can prove work shipped; it cannot prove a conclusion is still true
+
+`core/06-hygiene` closes follow-ups on hard evidence and refuses to close them on anything less,
+and that half is as strong as the lane board's. The conclusions half is weaker, and the difference
+matters because they print in the same report.
+
+It checks two things about a recorded conclusion: whether it has a source at all, and whether a
+source that names a file still resolves. Both are real, and neither is the question you care
+about. A conclusion whose source file still exists can be **wrong** — the query can have been
+misread, the population can have been the wrong one, the figure can have been correct in March
+and false now with no file changing at all. A green hygiene report says nothing about any of that.
+
+Nor does it notice a source that changed underneath a claim. File existence is the only signal it
+has; content drift is invisible to it. Two components on the menu would close that gap —
+`claim-spine`, which gives claims a real schema and a reverse-dependency query, and
+`source-capsules`, which fingerprints the excerpt a claim rests on — and neither is installed.
+Until one is, treat the conclusions section as a list of claims you can no longer **defend**, not
+a list of claims that are wrong, and never the reverse.
+
+The retired-phrase scan has a sharper limit: it finds only phrases you thought to list. It ships
+empty and reports its own inertness rather than printing a clean section, which is the most an
+unconfigured check can honestly do — but an inert check that announces itself is still an inert
+check.
+
 ---
 
 ## Two things that work better than you would expect

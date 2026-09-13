@@ -29,6 +29,7 @@ Everything lands in `~/.claude/` and `~/harness/`. **Nothing goes in your team's
 | `core/03-press` | markdown → magazine-format document → PDF, with a claim gate that fails the build when a stated fact stops tracing |
 | `core/04-journal` | decisions, friction and ideas in one command; the day rolls itself up on every stop |
 | `core/05-lanes` | the parallel-work board — one holder per workstream, an approval gate, and one surface for everything waiting on you |
+| `core/06-hygiene` | the retirement path — what has gone stale across the store, and the corroboration a close has to clear before anything is closed |
 
 ## The one behaviour change that matters
 

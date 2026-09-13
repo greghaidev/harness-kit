@@ -1,0 +1,7 @@
+[Unit]
+Description=Sweep the harness memory estate for what has gone stale
+
+[Service]
+Type=oneshot
+Environment=HARNESS_HOME=%h/harness
+ExecStart=/usr/bin/python3 %h/harness/core/06-hygiene/hygiene.py sweep
