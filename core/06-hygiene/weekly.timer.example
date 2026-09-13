@@ -1,0 +1,22 @@
+# The sweep DETECTS; it changes nothing, so it is safe to run unattended. Disposition
+# (`hygiene reconcile`) is never automated — it closes commitments, and that decision wants
+# a person or an agent reading the evidence.
+#
+# Running it weekly is what makes `hygiene status` able to alarm: the status line reports the
+# age of the last sweep, so a timer that dies becomes visible at the next session start
+# instead of looking like a store with nothing wrong.
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp weekly.service.example ~/.config/systemd/user/harness-hygiene.service
+#   cp weekly.timer.example   ~/.config/systemd/user/harness-hygiene.timer
+#   systemctl --user daemon-reload && systemctl --user enable --now harness-hygiene.timer
+#
+[Unit]
+Description=Sweep the harness memory estate for what has gone stale
+
+[Timer]
+OnCalendar=Mon *-*-* 08:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

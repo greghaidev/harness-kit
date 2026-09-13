@@ -50,7 +50,7 @@ def _load(path: pathlib.Path, name: str):
 @check("layout", "kit is installed at HARNESS_HOME")
 def _layout():
     missing = [p for p in ("core/01-memory", "core/02-session", "core/03-press",
-                          "core/05-lanes")
+                          "core/05-lanes", "core/06-hygiene")
                if not (HOME / p).is_dir()]
     return (not missing), f"{HOME}" + (f" MISSING {missing}" if missing else "")
 
@@ -318,6 +318,59 @@ def _lanes_honest_skip():
         ["reconcile"])
     ok = "SKIPPED" in rec.stdout and "Nothing to close" in rec.stdout
     return ok, "says SKIPPED rather than rendering a clean board" if ok else rec.stdout[-110:]
+
+
+# ---------------------------------------------------------------- hygiene
+#
+# Same throwaway-store discipline as the lanes checks, for the same reason: proving the sweep
+# runs on this machine must not cost the operator a heartbeat note and a report they then have
+# to reason about on a board they are about to start trusting.
+
+def _hygiene_sandbox(*args, **kw):
+    d = pathlib.Path(tempfile.mkdtemp(prefix="harness-hygiene-verify-"))
+    try:
+        for t in ("work", "meta"):
+            (d / t).mkdir()
+            for cmd in (["init", "-q"], ["config", "user.email", "a@b.c"],
+                        ["config", "user.name", "t"]):
+                subprocess.run(["git", *cmd], cwd=d / t, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        (d / "lanes.json").write_text(json.dumps(kw.pop("config", {})))
+        env = {**os.environ, "HARNESS_HOME": str(HOME),
+               "HARNESS_WORK_STORE": str(d / "work"), "HARNESS_META_STORE": str(d / "meta"),
+               "HARNESS_LANES_CONFIG": str(d / "lanes.json"),
+               "HARNESS_HYGIENE_STATE": str(d / "state"), **kw}
+        runs = [subprocess.run(
+            [sys.executable, str(CORE / "06-hygiene" / "hygiene.py"), *argv],
+            capture_output=True, text=True, env=env, timeout=120) for argv in args]
+        return runs, d
+    finally:
+        if not kw.get("_keep"):
+            shutil.rmtree(d, ignore_errors=True)
+
+
+@check("06-hygiene", "the sweep runs and writes a report")
+def _hygiene_sweeps():
+    (sweep,), _ = _hygiene_sandbox(["sweep", "--no-heartbeat"])
+    ok = sweep.returncode == 0 and "sweep done" in sweep.stdout
+    return ok, "swept" if ok else (sweep.stderr.strip() or sweep.stdout.strip())[-110:]
+
+
+@check("06-hygiene", "THE REFUSAL: it aborts rather than reporting a clean store it never checked")
+def _hygiene_refuses():
+    """The single most important behavior here. Without a reachable PR host there is nothing to
+    corroborate against, and 'nothing to close' would be indistinguishable from a clean store."""
+    (rec,), _ = _hygiene_sandbox(["reconcile"], config={"pr_cli": None})
+    ok = rec.returncode != 0 and "SKIPPED run, not a clean one" in rec.stderr
+    return ok, "aborts and says why" if ok else f"did NOT refuse (rc={rec.returncode})"
+
+
+@check("06-hygiene", "status survives a store it cannot reach (it runs on every session)")
+def _hygiene_status_safe():
+    r = subprocess.run([sys.executable, str(CORE / "06-hygiene" / "hygiene.py"), "status"],
+                       capture_output=True, text=True, timeout=60,
+                       env={**os.environ, "HARNESS_HOME": "/nonexistent-harness"})
+    return r.returncode == 0, "exits 0 with no store" if r.returncode == 0 else r.stderr[:110]
 
 
 # ---------------------------------------------------------------- report
