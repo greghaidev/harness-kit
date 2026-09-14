@@ -208,7 +208,7 @@ def dirty_session_worktrees(session_id, project_dir=None, runner=None):
 def _run_git(args, cwd=None):
     try:
         proc = subprocess.run(["git", *args], cwd=cwd or _project_dir(),
-                              capture_output=True, text=True, timeout=20)
+                              capture_output=True, text=True, timeout=20, encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError):
         return None
     if proc.returncode != 0:
@@ -420,7 +420,7 @@ def has_declaration(session_id, project_dir=None):
 def _recorded_terminal(session_id, project_dir=None):
     """claim / discard / limit — the work port's terminal declarations."""
     try:
-        with open(queue_path(session_id, project_dir)) as fh:
+        with open(queue_path(session_id, project_dir), encoding="utf-8") as fh:
             data = json.load(fh)
     except Exception:
         return None
@@ -559,4 +559,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # A Windows pipe defaults to the ANSI code page, and Claude Code reads hook output as
+    # UTF-8; one printed arrow or em dash would otherwise crash the hook.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     main()

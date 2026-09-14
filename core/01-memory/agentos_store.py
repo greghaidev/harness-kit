@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import contextlib
 import datetime
-import fcntl
 import json
 import math
 import os
@@ -25,6 +24,12 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
+
+try:
+    import fcntl
+except ImportError:  # Windows has no fcntl; msvcrt byte-range locks stand in for flock below
+    fcntl = None
+    import msvcrt
 
 try:
     import sqlite3
@@ -121,6 +126,41 @@ def _state_dir() -> Path:
     return d
 
 
+def _lock_fd(fd: int, blocking: bool = True) -> bool:
+    """Take an exclusive advisory lock on an open descriptor, on any OS.
+
+    Returns False only when ``blocking`` is False and someone else holds the lock. POSIX uses
+    flock. Windows has no flock, so it locks byte 0 with msvcrt instead — Windows allows a lock
+    past end of file, so the lock file never needs content — and polls, because msvcrt's own
+    blocking mode gives up after ten seconds rather than waiting its turn.
+    """
+    if fcntl is not None:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+            return True
+        except (BlockingIOError, OSError):
+            if blocking:
+                raise
+            return False
+    os.lseek(fd, 0, os.SEEK_SET)
+    while True:
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            if not blocking:
+                return False
+            time.sleep(0.02)
+
+
+def _unlock_fd(fd: int) -> None:
+    if fcntl is not None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return
+    os.lseek(fd, 0, os.SEEK_SET)
+    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+
 @contextlib.contextmanager
 def _note_lock(tenant: str, note_id: str):
     """Exclusive advisory lock serializing the read-modify-write of ONE note across processes.
@@ -150,11 +190,11 @@ def _note_lock(tenant: str, note_id: str):
         pass
     fd = os.open(str(d / f"{_safe_name(note_id)}.lock"), os.O_CREAT | os.O_RDWR, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        _lock_fd(fd)
         yield
     finally:
         try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _unlock_fd(fd)
         finally:
             os.close(fd)
 
@@ -598,10 +638,10 @@ def _git_commit(root: Path, path: Path, msg: str) -> None:
     try:
         if not (root / ".git").exists():
             subprocess.run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
-        with open(root / ".git" / "agentos-commit.lock", "w") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except (BlockingIOError, OSError):
+        # Append mode, not "w": on Windows, emptying a file that another process holds a
+        # byte-range lock on can itself fail, and the lock file never has content anyway.
+        with open(root / ".git" / "agentos-commit.lock", "a", encoding="utf-8") as lock:
+            if not _lock_fd(lock.fileno(), blocking=False):
                 return  # another commit is in flight; it sweeps our already-written file via `git add -A`
             index_lock = root / ".git" / "index.lock"
             try:
@@ -1264,6 +1304,12 @@ def health(id: str, patch: Optional[dict] = None, tenant: Optional[str] = None) 
 
 
 if __name__ == "__main__":
+    import sys
+    # A Windows pipe defaults to the ANSI code page, and Claude Code reads hook output as
+    # UTF-8; one printed arrow or em dash would otherwise crash the hook.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     import sys as _sys
 
     if "--rebuild" in _sys.argv:

@@ -56,7 +56,7 @@ class ClaimError(Exception):
 # refused: this is an allowlist, not an escape hatch.
 EXTERNAL_ROOTS = tuple(
     pathlib.Path(os.path.expanduser(p))
-    for p in os.environ.get("PRESS_EXTERNAL_ROOTS", "").split(":") if p
+    for p in os.environ.get("PRESS_EXTERNAL_ROOTS", "").split(os.pathsep) if p
 )
 
 
@@ -114,10 +114,10 @@ def _handle_lines(root, arg, esc):
     p = _resolve_path(root, arg)
     if not p.is_file():
         raise ClaimError(f"no such file: {arg}")
-    n = len(p.read_text(errors="replace").split("\n"))
+    n = len(p.read_text(errors="replace", encoding="utf-8").split("\n"))
     # A trailing newline yields a final empty element; a file's "line count" in
     # every tool a reader would check against (wc -l) does not count it.
-    if p.read_text(errors="replace").endswith("\n"):
+    if p.read_text(errors="replace", encoding="utf-8").endswith("\n"):
         n -= 1
     return _fmt_int(n)
 
@@ -153,7 +153,7 @@ def _handle_quote(root, arg, esc):
     p = _resolve_path(root, rel.strip())
     if not p.is_file():
         raise ClaimError(f"no such file: {rel.strip()}")
-    block = _extract_symbol(p.read_text(errors="replace"), symbol.strip())
+    block = _extract_symbol(p.read_text(errors="replace", encoding="utf-8"), symbol.strip())
     return f'<pre class="src"><code>{esc(block)}</code></pre>'
 
 
@@ -164,7 +164,7 @@ def _handle_contains(root, arg, esc):
     p = _resolve_path(root, rel.strip())
     if not p.is_file():
         raise ClaimError(f"no such file: {rel.strip()}")
-    if literal not in p.read_text(errors="replace"):
+    if literal not in p.read_text(errors="replace", encoding="utf-8"):
         raise ClaimError(f"{rel.strip()} no longer contains {literal!r}")
     return ""
 

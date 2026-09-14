@@ -355,7 +355,7 @@ def marker_path(session_id, repo_root=None):
 def _touch_marker(session_id, repo_root=None):
     p = marker_path(session_id, repo_root)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(_iso(_now()) + "\n")
+    p.write_text(_iso(_now()) + "\n", encoding="utf-8")
     return p
 
 
@@ -523,4 +523,9 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # A Windows pipe defaults to the ANSI code page, and Claude Code reads hook output as
+    # UTF-8; one printed arrow or em dash would otherwise crash the hook.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     main()

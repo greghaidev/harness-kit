@@ -263,7 +263,7 @@ def _render_gov_waiting():
                 os.environ.get("HARNESS_HOME", os.path.expanduser("~/harness")),
                 "menu", "lanes", "lane.py"), "gov", "--waiting"],
             capture_output=True, text=True, timeout=10,
-        )
+         encoding="utf-8", errors="replace")
         if gov.returncode == 1 and gov.stdout.strip():
             return gov.stdout.strip()
     except Exception:
@@ -319,4 +319,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # A Windows pipe defaults to the ANSI code page, and Claude Code reads hook output as
+    # UTF-8; one printed arrow or em dash would otherwise crash the hook.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     main()

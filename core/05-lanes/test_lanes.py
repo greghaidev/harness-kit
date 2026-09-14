@@ -50,11 +50,11 @@ def env():
 
 def L(env, *args):
     return subprocess.run([sys.executable, str(LANES), *args],
-                          capture_output=True, text=True, env=env)
+                          capture_output=True, text=True, env=env, encoding="utf-8", errors="replace")
 
 
 def configure(env, **kw):
-    pathlib.Path(env["HARNESS_LANES_CONFIG"]).write_text(json.dumps(kw))
+    pathlib.Path(env["HARNESS_LANES_CONFIG"]).write_text(json.dumps(kw), encoding="utf-8")
 
 
 def make_repo(env, merged=("feature/shipped",), unmerged=("feature/wip",)):
@@ -64,18 +64,18 @@ def make_repo(env, merged=("feature/shipped",), unmerged=("feature/wip",)):
     _git(r, "init", "-q", "-b", "main")
     _git(r, "config", "user.email", "a@b.c")
     _git(r, "config", "user.name", "t")
-    (r / "a.txt").write_text("1")
+    (r / "a.txt").write_text("1", encoding="utf-8")
     _git(r, "add", "-A")
     _git(r, "commit", "-qm", "init")
     for b in merged:
         _git(r, "checkout", "-qb", b)
-        (r / "a.txt").write_text(b)
+        (r / "a.txt").write_text(b, encoding="utf-8")
         _git(r, "commit", "-qam", b)
         _git(r, "checkout", "-q", "main")
         _git(r, "merge", "-q", "--no-ff", b, "-m", f"merge {b}")
     for b in unmerged:
         _git(r, "checkout", "-qb", b)
-        (r / "a.txt").write_text(b)
+        (r / "a.txt").write_text(b, encoding="utf-8")
         _git(r, "commit", "-qam", b)
         _git(r, "checkout", "-q", "main")
     configure(env, repo=str(r), trunk="main", pr_cli=None)

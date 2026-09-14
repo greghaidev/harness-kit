@@ -74,7 +74,7 @@ def test_term_appears_nowhere_in_the_kit(pattern):
     hits = []
     for p in _files():
         try:
-            text = p.read_text()
+            text = p.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
         for n, line in enumerate(text.split("\n"), 1):

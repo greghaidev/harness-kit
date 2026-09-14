@@ -6,7 +6,6 @@ asserts the §5 schema contract + the restricted-tenant wall. Needs only pyyaml 
 so it runs regardless of the server venv. Exit 0 = contract holds; non-zero = a wall/contract breach.
 """
 import json
-import multiprocessing as mp
 import os
 import subprocess
 import sys
@@ -59,7 +58,7 @@ check(os.path.exists(g["path"]), "note file written to disk")
 
 # 1b — write is git-committed (audit trail), incl. git-init of the previously-bare work store
 log = subprocess.run(["git", "-C", os.environ["HARNESS_WORK_STORE"], "log", "--oneline"],
-                     capture_output=True, text=True)
+                     capture_output=True, text=True, encoding="utf-8", errors="replace")
 check("memory.put" in log.stdout, "write is git-committed")
 
 # 2 — schema validation
@@ -186,19 +185,18 @@ check(part.get(fu2["id"]) == "partial", "advances link marks follow-up partial (
 check(s.list_tenants() == ["meta", "work"], "list_tenants excludes restricted")
 
 # 9 — concurrent-write safety: never block on a lock, self-heal a stale one, sweep skipped commits
-import fcntl  # noqa: E402
 import time  # noqa: E402
 work_root = os.environ["HARNESS_WORK_STORE"]
 
 
 def _commit_count(root):
-    r = subprocess.run(["git", "-C", root, "rev-list", "--count", "HEAD"], capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", root, "rev-list", "--count", "HEAD"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return int((r.stdout or "0").strip() or 0)
 
 
 # 9a — a stale git index.lock (crashed prior commit) is cleared so commits aren't deadlocked forever
 idx = os.path.join(work_root, ".git", "index.lock")
-open(idx, "w").close()
+open(idx, "w", encoding="utf-8").close()
 os.utime(idx, (time.time() - 3600, time.time() - 3600))  # backdate so it reads as stale
 before = _commit_count(work_root)
 s.put({"type": "semantic", "title": "After stale lock", "tenant": "work", "sensitivity": "internal",
@@ -207,19 +205,19 @@ check(not os.path.exists(idx), "stale index.lock cleared on commit")
 check(_commit_count(work_root) > before, "commit still succeeds after clearing stale lock")
 
 # 9b — while another agent holds the commit lock, a write must NOT block or raise (file still lands)
-held = open(os.path.join(work_root, ".git", "agentos-commit.lock"), "w")
-fcntl.flock(held, fcntl.LOCK_EX)
+held = open(os.path.join(work_root, ".git", "agentos-commit.lock"), "a", encoding="utf-8")
+check(s._lock_fd(held.fileno(), blocking=False), "test process holds the commit lock")
 r_def = s.put({"type": "semantic", "title": "Written under contention", "tenant": "work",
                "sensitivity": "internal", "egress": "cloud-ok", "status": "committed",
                "body": "no halt while commit lock is held."})
 check(os.path.exists(s.get(r_def["id"])["path"]), "write succeeds while commit lock held (no halt)")
-fcntl.flock(held, fcntl.LOCK_UN)
+s._unlock_fd(held.fileno())
 held.close()
 # 9c — the next successful commit sweeps the deferred file in (self-healing audit trail)
 s.put({"type": "semantic", "title": "Sweeper", "tenant": "work", "sensitivity": "internal",
        "egress": "cloud-ok", "status": "committed", "body": "this commit also captures the deferred note."})
 porcelain = subprocess.run(["git", "-C", work_root, "status", "--porcelain"],
-                           capture_output=True, text=True).stdout.strip()
+                           capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
 check(porcelain == "", "deferred write swept into the next commit (self-healing trail)")
 
 # 9d — multi-term search ANDs the terms (so "inventory reporting" matches a note tagged with both)
@@ -256,23 +254,39 @@ check(ranked_tf[:1] == ["rank-tf-high"], "BM25 ranks high term-frequency above a
 # 11 — concurrent-write hammer: N processes × M puts against one store. Every write must land on
 # disk (writes are direct, never gated by the commit lock) and the trail must self-heal to a clean
 # tree after a final sweep — no lost notes, no deadlock. This is the multi-agent reality, for real.
-mp.set_start_method("fork", force=True)  # inherit env + loaded module; spawn would re-exec this script
+#
+# The workers are separate interpreters started with subprocess, not multiprocessing. Windows has no
+# fork, and spawn would re-run this whole script inside every child. A fresh process importing the
+# store is also the more honest probe: it is exactly what two agents writing at once are.
+_WORKER = (
+    "import sys; sys.path.insert(0, sys.argv[1]); import agentos_store as s\n"
+    "kind, wid, n = sys.argv[2], int(sys.argv[3]), int(sys.argv[4])\n"
+    "for j in range(n):\n"
+    "    if kind == 'put':\n"
+    "        s.put({'type': 'semantic', 'title': f'hammer {wid} {j}', 'tenant': 'work',\n"
+    "               'id': f'hammer-{wid}-{j}', 'sensitivity': 'internal', 'egress': 'cloud-ok',\n"
+    "               'status': 'committed', 'body': f'concurrent write {wid}/{j}'})\n"
+    "    else:\n"
+    "        s.link('linkrace', 'relates_to', f'peer-{wid}-{j}', 'work')\n"
+)
 
 
-def _hammer_worker(wid, m):
-    for j in range(m):
-        s.put({"type": "semantic", "title": f"hammer {wid} {j}", "tenant": "work",
-               "id": f"hammer-{wid}-{j}", "sensitivity": "internal", "egress": "cloud-ok",
-               "status": "committed", "body": f"concurrent write {wid}/{j}"})
+def _run_workers(kind, n_proc, per):
+    """Start n_proc workers at once; True only if every one finished in time and exited 0."""
+    procs = [subprocess.Popen([sys.executable, "-c", _WORKER, HERE, kind, str(w), str(per)])
+             for w in range(n_proc)]
+    finished = True
+    for proc in procs:
+        try:
+            proc.wait(timeout=240)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            finished = False
+    return finished and all(proc.returncode == 0 for proc in procs)
 
 
 N_PROC, PER = 4, 12
-procs = [mp.Process(target=_hammer_worker, args=(w, PER)) for w in range(N_PROC)]
-for p in procs:
-    p.start()
-for p in procs:
-    p.join(timeout=60)
-check(all(not p.is_alive() for p in procs), "all concurrent writers finished (no deadlock)")
+check(_run_workers("put", N_PROC, PER), "all concurrent writers finished (no deadlock)")
 landed = [f for f in os.listdir(os.path.join(work_root, "notes")) if f.startswith("hammer-")]
 check(len(landed) == N_PROC * PER, f"all {N_PROC * PER} concurrent writes landed on disk (no lost writes)")
 
@@ -287,7 +301,7 @@ def _readable(w, j):
 check(all(_readable(w, j) for w in range(N_PROC) for j in range(PER)), "every concurrent note is readable")
 s.put({"type": "semantic", "title": "hammer sweeper", "tenant": "work", "id": "hammer-sweeper",
        "sensitivity": "internal", "egress": "cloud-ok", "status": "committed", "body": "final sweep commit"})
-porc = subprocess.run(["git", "-C", work_root, "status", "--porcelain"], capture_output=True, text=True).stdout.strip()
+porc = subprocess.run(["git", "-C", work_root, "status", "--porcelain"], capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
 check(porc == "", "after concurrent hammer the tree is fully committed (self-healing trail, nothing dropped)")
 
 # 11b — same-note read-modify-write must be atomic across processes (a second lineage review F1, 2026-07-05).
@@ -300,18 +314,8 @@ s.put({"type": "semantic", "title": "link race target", "tenant": "work", "id": 
        "sensitivity": "internal", "egress": "cloud-ok", "status": "committed", "body": "shared note"})
 
 
-def _link_worker(wid, k):
-    for j in range(k):
-        s.link("linkrace", "relates_to", f"peer-{wid}-{j}", "work")
-
-
 L_PROC, L_PER = 8, 8
-lprocs = [mp.Process(target=_link_worker, args=(w, L_PER)) for w in range(L_PROC)]
-for p in lprocs:
-    p.start()
-for p in lprocs:
-    p.join(timeout=60)
-check(all(not p.is_alive() for p in lprocs), "all concurrent same-note linkers finished (no deadlock)")
+check(_run_workers("link", L_PROC, L_PER), "all concurrent same-note linkers finished (no deadlock)")
 race_targets = {l.get("target") for l in (s.get("linkrace", "work")["frontmatter"].get("links") or [])}
 check(len(race_targets) == L_PROC * L_PER,
       f"all {L_PROC * L_PER} concurrent same-note links survived "
@@ -324,7 +328,7 @@ for i in range(16):
            "id": f"digest-cap-{i}", "sensitivity": "internal", "egress": "cloud-ok",
            "status": "committed", "tags": ["follow-up"], "body": "open follow-up for the cap test"})
 digest = subprocess.run([sys.executable, os.path.join(HERE, "session_context.py")],
-                        capture_output=True, text=True).stdout
+                        capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
 # Scope the count to the Open-follow-ups block (the same titles also recur in Recent notes).
 open_block = digest.split("Open follow-ups:", 1)[-1].split("\n\n", 1)[0]
 check(open_block.count("digest-cap probe") == 14, "digest shows exactly the follow-up cap (14), not all 16")
@@ -458,17 +462,20 @@ check("warning" not in no_warn, "put() does not warn once supersedes=[] is passe
 # 15 — commit-failure surfacing (task 4): a forced git failure appends to commit-failures.jsonl,
 # never raising from the writer (the note itself always lands) or from the logger itself.
 commit_log_path = os.path.join(os.environ["AGENTOS_STATE"], "commit-failures.jsonl")
-git_dir = os.path.join(work_root, ".git")
-os.chmod(git_dir, 0o500)  # strip write: git can't create index.lock, so add/commit fails
+# A FRESH index.lock (younger than STALE_LOCK_SECS, so the store must leave it alone) makes git
+# refuse to add or commit. This used to strip write permission from .git instead, which works on
+# POSIX but not on Windows, where a directory's read-only bit does not stop writes into it.
+fresh_lock = os.path.join(work_root, ".git", "index.lock")
+open(fresh_lock, "w", encoding="utf-8").close()
 try:
     forced = s.put({"type": "semantic", "title": "Forced commit failure probe", "tenant": "work",
                      "sensitivity": "internal", "egress": "cloud-ok", "status": "committed", "body": "x"})
 finally:
-    os.chmod(git_dir, 0o700)
+    os.remove(fresh_lock)
 check(bool(s.get(forced["id"])["path"]), "note file still lands on disk despite the forced commit failure")
 check(os.path.exists(commit_log_path), "commit-failures.jsonl is created on a forced git failure")
 if os.path.exists(commit_log_path):
-    rec = json.loads(open(commit_log_path).read().strip().splitlines()[-1])
+    rec = json.loads(open(commit_log_path, encoding="utf-8").read().strip().splitlines()[-1])
     check(rec.get("tenant") == "work" and "error" in rec and "ts" in rec,
           "commit-failure line carries ts/tenant/error per the shared-contract format")
 

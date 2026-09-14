@@ -67,5 +67,5 @@ def test_public_api_matches_upstream(name):
 def test_the_kit_carries_every_module_the_engine_needs():
     for name in MODULES + ["press_css", "press_economist"]:
         assert (KIT / f"{name}.py").exists(), f"{name}.py missing from the kit"
-    assert (KIT / "to_pdf.sh").exists()
+    assert (KIT / "to_pdf.py").exists()
     assert (KIT / "fonts").is_dir()

@@ -12,6 +12,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 
 import pytest
 
@@ -37,12 +38,12 @@ def env():
 
 def j(env, *args):
     return subprocess.run([sys.executable, str(JOURNAL), *args],
-                          capture_output=True, text=True, env=env)
+                          capture_output=True, text=True, env=env, encoding="utf-8", errors="replace")
 
 
 def declare(env, **kw):
     q = pathlib.Path(env["_D"]) / "proj/.claude/state/continuation/s1.json"
-    q.write_text(json.dumps({"items": [], **kw}))
+    q.write_text(json.dumps({"items": [], **kw}), encoding="utf-8")
 
 
 # ---------------------------------------------------------------- the four hand kinds
@@ -133,22 +134,83 @@ def test_a_bad_date_is_refused_rather_than_guessed(env):
 
 
 # ---------------------------------------------------------------- the hook placement
-def test_the_stop_guard_invokes_the_journal():
+#
+# These used to read the bash Stop guard's text and look for `|| true`, `>/dev/null`, `timeout`
+# and a trailing `&`. That proved the script SAID the right things, and it only meant anything
+# where bash runs. The guard is Python now, so they run it: a journal that records it was called,
+# one that hangs, one that crashes — and a guard that still blocks, so "exit 0, no output" cannot
+# pass for a guard that has stopped deciding anything.
+GUARD = KIT / "core" / "02-session" / "stop_guard.py"
+STOP_INPUT = {"session_id": "s1", "transcript_path": "", "stop_hook_active": False}
+
+
+def _fake_journal(env, body):
+    p = pathlib.Path(env["_D"]) / "fake_journal.py"
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+def _stop(env, journal):
+    t0 = time.monotonic()
+    r = subprocess.run([sys.executable, str(GUARD)], input=json.dumps(STOP_INPUT),
+                       capture_output=True, text=True, encoding="utf-8", timeout=60,
+                       env={**env, "HARNESS_STOP_GUARD_JOURNAL": str(journal)})
+    return r, time.monotonic() - t0
+
+
+def test_the_stop_guard_rolls_the_journal(env):
     """The placement IS the argument: capture as a side effect of a gate that already runs."""
-    body = (KIT / "core/02-session/unfinished-work-stop-guard.sh").read_text()
-    assert "04-journal/journal.py" in body
-    assert "roll" in body
+    marker = pathlib.Path(env["_D"]) / "rolled.txt"
+    fake = _fake_journal(env, "import pathlib, sys\n"
+                              f"pathlib.Path({str(marker)!r}).write_text("
+                              "' '.join(sys.argv[1:]), encoding='utf-8')\n")
+    r, _ = _stop(env, fake)
+    assert r.returncode == 0, r.stderr
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline and not (marker.exists() and marker.read_text(encoding="utf-8")):
+        time.sleep(0.1)
+    assert marker.exists(), "the Stop guard never ran the journal"
+    assert marker.read_text(encoding="utf-8") == "roll --quiet"
 
 
-def test_the_stop_guard_cannot_be_broken_by_the_journal():
-    """Backgrounded, timed out, output discarded, `|| true`. A broken journal must never
-    be able to affect whether a turn is allowed to end."""
-    body = (KIT / "core/02-session/unfinished-work-stop-guard.sh").read_text()
-    # The path is a shell variable at the call site, so match the invocation, not the
-    # literal filename — the earlier probe matched only the assignment line and then
-    # indexed an empty list.
-    line = [l for l in body.split("\n") if "$JOURNAL" in l and " roll" in l][0]
-    assert "|| true" in line
-    assert ">/dev/null" in line
-    assert "timeout" in line
-    assert line.rstrip().endswith("&")
+def test_a_hanging_journal_cannot_hold_up_the_stop(env):
+    r, took = _stop(env, _fake_journal(env, "import time\ntime.sleep(25)\n"))
+    assert r.returncode == 0, r.stderr
+    assert took < 15, f"the stop waited {took:.1f}s on a hanging journal"
+
+
+def test_a_crashing_journal_cannot_change_the_decision(env):
+    r, _ = _stop(env, _fake_journal(env, "import sys\nraise SystemExit('journal is broken')\n"))
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "", "nothing is outstanding, so the stop must be allowed"
+
+
+def test_the_guard_still_blocks_while_the_journal_is_broken(env):
+    declare(env, items=[{"id": "w1", "text": "finish the migration note"}])
+    r, _ = _stop(env, _fake_journal(env, "import sys\nraise SystemExit(3)\n"))
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["decision"] == "block"
+
+
+def test_the_journal_roll_is_time_limited():
+    """The detached child is what enforces the limit, so test it directly."""
+    sys.path.insert(0, str(GUARD.parent))
+    import stop_guard
+    with tempfile.TemporaryDirectory() as d:
+        slow = pathlib.Path(d) / "slow.py"
+        slow.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+        t0 = time.monotonic()
+        assert stop_guard.roll_journal(str(slow), timeout=1) == 0
+        assert time.monotonic() - t0 < 10
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the bash shim only exists for POSIX installs")
+def test_the_old_bash_entry_point_still_works(env):
+    """Existing installs point settings.json at the .sh; it must keep deciding the same way."""
+    declare(env, items=[{"id": "w1", "text": "unfinished"}])
+    shim = KIT / "core" / "02-session" / "unfinished-work-stop-guard.sh"
+    r = subprocess.run(["bash", str(shim)], input=json.dumps(STOP_INPUT), capture_output=True,
+                       text=True, encoding="utf-8", timeout=60,
+                       env={**env, "HARNESS_STOP_GUARD_JOURNAL": str(pathlib.Path(env["_D"]) / "none.py")})
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["decision"] == "block"

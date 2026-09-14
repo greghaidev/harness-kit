@@ -139,7 +139,7 @@ def _session_declarations(project_dir: str | None = None) -> list[dict]:
         return out
     for f in sorted(qdir.glob("*.json")):
         try:
-            data = json.loads(f.read_text())
+            data = json.loads(f.read_text(encoding="utf-8"))
         except Exception:                                # noqa: BLE001
             continue
         sid = f.stem
@@ -291,4 +291,9 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    # A Windows pipe defaults to the ANSI code page, and Claude Code reads hook output as
+    # UTF-8; one printed arrow or em dash would otherwise crash the hook.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     raise SystemExit(main())
