@@ -12,7 +12,12 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-HERE = os.path.dirname(os.path.abspath(__file__))
+# A script with no __main__ block, so the UTF-8 switch goes here: on Windows the result line's
+# em dash otherwise reaches verify.py (and the CI log) as a replacement character.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+HERE =os.path.dirname(os.path.abspath(__file__))
 
 FAIL = 0
 

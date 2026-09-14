@@ -105,12 +105,20 @@ def test_no_unix_only_module_is_imported_unguarded():
     assert not bad, "unguarded Unix-only imports:\n  " + "\n  ".join(bad)
 
 
+def _prints_at_module_level(tree):
+    """A script with no __main__ block still prints when it runs; the store's contract test is one."""
+    top = [n for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+    return any(isinstance(c, ast.Call) and getattr(c.func, "id", None) == "print"
+               for n in top for c in ast.walk(n))
+
+
 def test_every_entry_point_writes_utf8():
     """Claude Code reads hook output as UTF-8; a Windows pipe writes the ANSI code page."""
     entry, missing = 0, []
     for p in _sources():
         src = p.read_text(encoding="utf-8")
-        if 'if __name__ == "__main__":' not in src or _rel(p) in MCP_OWNS_STDIO:
+        is_entry = 'if __name__ == "__main__":' in src or _prints_at_module_level(ast.parse(src))
+        if not is_entry or _rel(p) in MCP_OWNS_STDIO:
             continue
         entry += 1
         if 'reconfigure(encoding="utf-8"' not in src:
