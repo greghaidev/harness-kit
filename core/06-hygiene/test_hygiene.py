@@ -59,18 +59,25 @@ def env():
 
         prs = d / "prs"
         prs.mkdir()
-        gh = d / "fake-gh"
+        # A Python script run by this interpreter, not a `#!/bin/sh` file: Windows cannot execute a
+        # shell script by name, and pr_cli accepts an argv list for exactly that case.
+        gh = d / "fake_gh.py"
         gh.write_text(
-            '#!/bin/sh\n'
-            'case "$2" in\n'
-            f'  list) cat "{prs}/list.json" 2>/dev/null || echo "[]" ;;\n'
-            f'  view) cat "{prs}/pr-$3.json" 2>/dev/null || exit 1 ;;\n'
-            'esac\n')
-        gh.chmod(0o755)
+            "import pathlib, sys\n"
+            f"prs = pathlib.Path({str(prs)!r})\n"
+            "cmd = sys.argv[2] if len(sys.argv) > 2 else ''\n"
+            "if cmd == 'list':\n"
+            "    p = prs / 'list.json'\n"
+            "    print(p.read_text(encoding='utf-8') if p.exists() else '[]')\n"
+            "elif cmd == 'view':\n"
+            "    p = prs / f'pr-{sys.argv[3]}.json'\n"
+            "    if not p.exists():\n"
+            "        sys.exit(1)\n"
+            "    print(p.read_text(encoding='utf-8'))\n", encoding="utf-8")
 
         (d / "lanes.json").write_text(json.dumps({
-            "tenant": "work", "repo": str(repo), "pr_cli": str(gh),
-        }))
+            "tenant": "work", "repo": str(repo), "pr_cli": [sys.executable, str(gh)],
+        }), encoding="utf-8")
 
         e = {**os.environ, "HARNESS_HOME": str(KIT),
              "HARNESS_WORK_STORE": str(d / "work"), "HARNESS_META_STORE": str(d / "meta"),
@@ -81,7 +88,7 @@ def env():
 
 def run(env, *args, expect=None):
     r = subprocess.run([sys.executable, str(HYGIENE), *args],
-                       capture_output=True, text=True, env=env, timeout=120)
+                       capture_output=True, text=True, env=env, timeout=120, encoding="utf-8", errors="replace")
     if expect is not None:
         assert r.returncode == expect, f"rc={r.returncode}\n{r.stdout}\n{r.stderr}"
     return r
@@ -92,7 +99,7 @@ def put_note(env, **note):
     code = (f"import sys; sys.path.insert(0, {str(KIT / 'core' / '01-memory')!r});\n"
             f"import agentos_store as s; import json;\n"
             f"print(s.put(json.loads({json.dumps(json.dumps(note))}))['id'])")
-    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env)
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, encoding="utf-8", errors="replace")
     assert r.returncode == 0, r.stderr
     return r.stdout.strip()
 
@@ -109,14 +116,14 @@ def followup(env, nid, title, body, created=None):
 def set_prs(env, index, views=None):
     d = pathlib.Path(env["_D"]) / "prs"
     (d / "list.json").write_text(json.dumps(
-        [{"number": n, "state": s} for n, s in index.items()]))
+        [{"number": n, "state": s} for n, s in index.items()]), encoding="utf-8")
     for num, view in (views or {}).items():
-        (d / f"pr-{num}.json").write_text(json.dumps(view))
+        (d / f"pr-{num}.json").write_text(json.dumps(view), encoding="utf-8")
 
 
 def report(env):
     state = pathlib.Path(env["_D"]) / "state"
-    return "\n".join(p.read_text() for p in state.glob("report-*.md"))
+    return "\n".join(p.read_text(encoding="utf-8") for p in state.glob("report-*.md"))
 
 
 # ─────────────────────────────────────────────────────────── the mis-tag class is PRECISE
@@ -238,7 +245,7 @@ def test_reconcile_aborts_when_it_cannot_reach_the_pr_host(env):
     """
     followup(env, "f-x", "Something", "ONE ACTION: do it.")
     cfg = pathlib.Path(env["HARNESS_LANES_CONFIG"])
-    cfg.write_text(json.dumps({**json.loads(cfg.read_text()), "pr_cli": None}))
+    cfg.write_text(json.dumps({**json.loads(cfg.read_text(encoding="utf-8")), "pr_cli": None}), encoding="utf-8")
     r = run(env, "reconcile", expect=2)
     assert "cannot corroborate" in r.stderr
     assert "SKIPPED run, not a clean one" in r.stderr
@@ -247,7 +254,7 @@ def test_reconcile_aborts_when_it_cannot_reach_the_pr_host(env):
 def test_the_sweep_says_so_when_ground_truth_was_unavailable(env):
     followup(env, "f-y", "Something", "ONE ACTION: do it.")
     cfg = pathlib.Path(env["HARNESS_LANES_CONFIG"])
-    cfg.write_text(json.dumps({**json.loads(cfg.read_text()), "pr_cli": None}))
+    cfg.write_text(json.dumps({**json.loads(cfg.read_text(encoding="utf-8")), "pr_cli": None}), encoding="utf-8")
     r = run(env, "sweep", "--no-heartbeat", expect=0)
     assert "SKIPPED" in r.stdout
     assert "This is not a clean result" in report(env)
@@ -284,14 +291,14 @@ def test_a_conclusion_whose_source_file_is_gone_is_surfaced(env):
 def test_a_conclusion_whose_source_still_exists_is_not_flagged(env):
     repo = pathlib.Path(env["_D"]) / "repo"
     (repo / "analysis").mkdir(parents=True)
-    (repo / "analysis" / "renewals.sql").write_text("select 1")
+    (repo / "analysis" / "renewals.sql").write_text("select 1", encoding="utf-8")
     put_note(env, id="c-3", title="CONCLUSION — 41% of accounts renew late", type="episodic",
              tenant="work", sensitivity="internal", egress="cloud-ok", status="committed",
              tags=["journal", "conclusion"],
              body="41% renew late\n\nsource: analysis/renewals.sql\n")
     run(env, "sweep", "--no-heartbeat", expect=0)
     assert '"broken_source_conclusions": 0' in pathlib.Path(
-        env["_D"], "state", "status.json").read_text()
+        env["_D"], "state", "status.json").read_text(encoding="utf-8")
 
 
 def test_a_prose_source_is_not_treated_as_a_missing_file(env):
@@ -303,7 +310,7 @@ def test_a_prose_source_is_not_treated_as_a_missing_file(env):
              body="renewals slipped\n\nsource: the Q3 finance pack, page 4\n")
     run(env, "sweep", "--no-heartbeat", expect=0)
     assert '"broken_source_conclusions": 0' in pathlib.Path(
-        env["_D"], "state", "status.json").read_text()
+        env["_D"], "state", "status.json").read_text(encoding="utf-8")
 
 
 # ─────────────────────────────────────────────────────────── status is honest about itself
@@ -317,9 +324,9 @@ def test_status_alarms_when_the_sweep_has_stopped_running(env):
     """A detector that silently stopped looks exactly like a clean store."""
     run(env, "sweep", "--no-heartbeat", expect=0)
     sp = pathlib.Path(env["_D"], "state", "status.json")
-    data = json.loads(sp.read_text())
+    data = json.loads(sp.read_text(encoding="utf-8"))
     data["last_run"] = _iso(_old(40))
-    sp.write_text(json.dumps(data))
+    sp.write_text(json.dumps(data), encoding="utf-8")
     r = run(env, "status", expect=0)
     assert "STALE" in r.stdout
 
@@ -331,7 +338,7 @@ def test_the_heartbeat_is_written_into_the_store(env):
         [sys.executable, "-c",
          f"import sys; sys.path.insert(0, {str(KIT / 'core' / '01-memory')!r});\n"
          "import agentos_store as s; print(bool(s.get('hygiene-sweep-heartbeat')))"],
-        capture_output=True, text=True, env=env)
+        capture_output=True, text=True, env=env, encoding="utf-8", errors="replace")
     assert got.stdout.strip() == "True", got.stderr
 
 
@@ -364,7 +371,7 @@ def test_status_survives_a_store_it_cannot_import(env):
     path moved is a hook you turn off, and then the alarm is gone too."""
     r = subprocess.run(
         [sys.executable, str(HYGIENE), "status"], capture_output=True, text=True,
-        env={**env, "HARNESS_HOME": "/nonexistent-harness"}, timeout=60)
+        env={**env, "HARNESS_HOME": "/nonexistent-harness"}, timeout=60, encoding="utf-8", errors="replace")
     assert r.returncode == 0, r.stderr
     assert "hygiene" in r.stdout.lower()
 
@@ -373,6 +380,6 @@ def test_sweep_refuses_clearly_when_the_store_is_missing(env):
     """The other half: a command that genuinely needs the store must say so, not half-run."""
     r = subprocess.run(
         [sys.executable, str(HYGIENE), "sweep", "--no-heartbeat"], capture_output=True, text=True,
-        env={**env, "HARNESS_HOME": "/nonexistent-harness"}, timeout=60)
+        env={**env, "HARNESS_HOME": "/nonexistent-harness"}, timeout=60, encoding="utf-8", errors="replace")
     assert r.returncode != 0
     assert "cannot import the memory store" in (r.stderr + r.stdout)

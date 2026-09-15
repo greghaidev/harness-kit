@@ -129,7 +129,7 @@ def _load_config():
     cfg = json.loads(json.dumps(DEFAULTS))
     if CONFIG_PATH.exists():
         try:
-            user = json.loads(CONFIG_PATH.read_text())
+            user = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         except Exception as e:                                  # noqa: BLE001
             sys.exit(f"hygiene.py: {CONFIG_PATH} is not readable JSON ({e}).")
         for k, v in user.items():
@@ -145,6 +145,12 @@ HCFG = CFG["hygiene"]
 TENANT = CFG.get("tenant") or None
 REPO = Path(os.path.expanduser(CFG["repo"])) if CFG.get("repo") else None
 PR_CLI = CFG.get("pr_cli") or None
+
+
+def _pr_cli_argv():
+    """`pr_cli` is a program name, or an argv list such as ["python", "gh_shim.py"] for a CLI that
+    cannot be started by name — any script on Windows, where only real executables can be."""
+    return list(PR_CLI) if isinstance(PR_CLI, (list, tuple)) else [PR_CLI]
 STALE_DAYS = int(HCFG.get("followup_stale_days", 21))
 ALARM_DAYS = int(HCFG.get("heartbeat_alarm_days", 8))
 RETIRED_PHRASES = [p for p in (HCFG.get("retired_phrases") or []) if p.strip()]
@@ -227,7 +233,7 @@ def _note_source(row):
     if not p:
         return {}, ""
     try:
-        return _split_frontmatter(Path(p).read_text(errors="replace"))
+        return _split_frontmatter(Path(p).read_text(errors="replace", encoding="utf-8"))
     except OSError:
         return {}, ""
 
@@ -261,9 +267,9 @@ def pr_index():
     if PR_CLI and REPO is not None and (REPO / ".git").exists():
         try:
             raw = subprocess.run(
-                [PR_CLI, "pr", "list", "--state", "all", "--limit", "1000",
+                [*_pr_cli_argv(), "pr", "list", "--state", "all", "--limit", "1000",
                  "--json", "number,state"],
-                cwd=REPO, capture_output=True, text=True, timeout=60).stdout
+                cwd=REPO, capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace").stdout
             idx = {p["number"]: p["state"] for p in json.loads(raw)}
         except Exception:                                       # noqa: BLE001
             idx = None
@@ -280,8 +286,8 @@ def pr_facts(num):
     if PR_CLI and REPO is not None:
         try:
             raw = subprocess.run(
-                [PR_CLI, "pr", "view", str(num), "--json", "title,files,mergedAt"],
-                cwd=REPO, capture_output=True, text=True, timeout=60).stdout
+                [*_pr_cli_argv(), "pr", "view", str(num), "--json", "title,files,mergedAt"],
+                cwd=REPO, capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace").stdout
             d = json.loads(raw)
             hay = ((d.get("title") or "") + " "
                    + " ".join(f.get("path", "") for f in (d.get("files") or []))).lower()
@@ -396,7 +402,7 @@ def scan_agreement_docs():
     for doc in AGREEMENT_DOCS:
         if not doc.exists():
             continue
-        for n, line in enumerate(doc.read_text(errors="replace").splitlines(), 1):
+        for n, line in enumerate(doc.read_text(errors="replace", encoding="utf-8").splitlines(), 1):
             for phrase in RETIRED_PHRASES:
                 if phrase.lower() in line.lower():
                     # A line that already says the thing is retired is documentation, not rot.
@@ -457,11 +463,11 @@ def cmd_sweep(no_heartbeat=False):
         lines += [f"## {title} ({len(items)})", ""]
         lines += [f"- {i}" for i in items] or ["- none"]
         lines.append("")
-    report.write_text("\n".join(lines))
+    report.write_text("\n".join(lines), encoding="utf-8")
 
     counts["last_run"] = _now().isoformat(timespec="seconds")
     counts["report"] = str(report)
-    STATUS_JSON.write_text(json.dumps(counts, indent=1))
+    STATUS_JSON.write_text(json.dumps(counts, indent=1), encoding="utf-8")
 
     if not no_heartbeat:
         _write_heartbeat(counts)
@@ -500,7 +506,7 @@ def cmd_status():
         print("Memory hygiene: NEVER RUN — run `hygiene sweep`")
         return 0
     try:
-        c = json.loads(STATUS_JSON.read_text())
+        c = json.loads(STATUS_JSON.read_text(encoding="utf-8"))
     except Exception:                                           # noqa: BLE001
         print("Memory hygiene: status file unreadable — run `hygiene sweep`")
         return 0
@@ -698,4 +704,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # A Windows pipe defaults to the ANSI code page, and Claude Code reads hook output as
+    # UTF-8; one printed arrow or em dash would otherwise crash the hook.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     raise SystemExit(main())

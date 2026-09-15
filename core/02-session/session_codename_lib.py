@@ -167,7 +167,7 @@ def mark_nudged(session_id, flag_dir=None):
     try:
         d = flag_dir or _flag_dir()
         os.makedirs(d, exist_ok=True)
-        with open(_marker_path(session_id, flag_dir), "w"):
+        with open(_marker_path(session_id, flag_dir), "w", encoding="utf-8"):
             pass
     except OSError:
         pass
@@ -236,4 +236,9 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # A Windows pipe defaults to the ANSI code page, and Claude Code reads hook output as
+    # UTF-8; one printed arrow or em dash would otherwise crash the hook.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     sys.exit(main())

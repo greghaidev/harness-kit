@@ -49,31 +49,44 @@ the store before installing anything.
 The core is not optional and is not a menu item: it is the substrate the rest needs. Install
 all of it.
 
+The installer does the mechanical part, identically on Windows, macOS and Linux. It needs
+Python 3.10 or newer and Git on PATH (on Windows: the python.org installer and Git for Windows).
+
 ```bash
-mkdir -p ~/harness ~/harness/store/work ~/harness/store/meta
-cp -r <this-kit>/core ~/harness/core
-cp -r <this-kit>/menu ~/harness/menu          # specs only; nothing here is active yet
-python3 -m venv ~/harness/.venv
-~/harness/.venv/bin/pip install -q pyyaml "mcp[cli]"
+python install.py --dry-run     # show what it would change in ~/.claude/settings.json; changes nothing
+python install.py               # on Windows: py install.py
 ```
+
+It copies `core/`, `menu/` (specs only; nothing there is active yet) and `verify.py` into
+`~/harness`, creates the two note stores as git repositories, builds a virtual environment with
+`pyyaml` and `mcp[cli]`, merges the environment and hooks into `~/.claude/settings.json` (Phase
+2 explains the hooks), and registers the memory server. Show the operator its output. Two things
+to know before you run it:
+
+- **It reads `settings.json` before it touches anything.** If that file does not parse, the
+  installer stops and nothing on the machine has changed. Fix the file with the operator; never
+  delete it to get past the error.
+- **It is safe to re-run, and a re-run is how the kit updates.** The note stores are never
+  touched, the old `settings.json` is kept as a timestamped backup, and hooks from an earlier
+  install are replaced rather than duplicated.
+
+Below, `<python>` means the environment's interpreter: `~/harness/.venv/bin/python` on macOS and
+Linux, `%USERPROFILE%\harness\.venv\Scripts\python.exe` on Windows. The installer prints it.
 
 **`core/01-memory` — the store.** Notes are markdown files with YAML frontmatter, in a git
 repo, written only through an MCP server. Every write is committed. Two tenants: `work` and
 `meta` — both names are arbitrary labels; repoint the roots with env rather than editing code:
 
-```bash
-export HARNESS_WORK_STORE=~/harness/store/work      # project + analysis notes
-export HARNESS_META_STORE=~/harness/store/meta  # notes about the tooling itself
-git -C ~/harness/store/work init -q && git -C ~/harness/store/meta init -q
-~/harness/.venv/bin/python ~/harness/core/01-memory/store_test.py   # must PASS
-```
-
-Register the server user-scoped, so it is available in every repo and committed to none:
+`HARNESS_WORK_STORE` holds project and analysis notes; `HARNESS_META_STORE` holds notes about
+the tooling itself. The installer writes both into `settings.json`. Prove the store contract:
 
 ```bash
-claude mcp add --scope user harness-memory -- \
-  ~/harness/.venv/bin/python ~/harness/core/01-memory/memory_server.py
+<python> ~/harness/core/01-memory/store_test.py   # must PASS
 ```
+
+The installer registers the server user-scoped as `harness-memory`, so it is available in every
+repo and committed to none, and reads the registration back with `claude mcp get`. If the
+`claude` command was not on PATH when it ran, it prints the exact command to run instead.
 
 **`core/02-session` — identity and terminal state.** A deterministic codename per session so
 a later session can find this one; a session index; and the Stop guard, **retargeted** (see
@@ -95,8 +108,10 @@ The roll-up is **generated on every stop**, by the same hook that enforces the t
 remember. It is idempotent, backgrounded, and its exit code is discarded, so a broken journal
 can never affect whether a turn is allowed to end.
 
-Optionally install `core/04-journal/daily.{timer,service}.example` as a user timer; that only
-matters for a day with no session at all, which the Stop hook cannot see.
+Optionally schedule a daily roll; that only matters for a day with no session at all, which the
+Stop hook cannot see. On Linux use `core/04-journal/daily.{timer,service}.example`; on Windows
+`py install.py --schedule` registers it with Task Scheduler; on macOS the installer prints a
+crontab line.
 
 **`core/05-lanes` — the parallel-work board.** Two problems, one shape. Outward: *what is
 happening to my request* has no home, so you rebuild the answer from scratch every time.
@@ -144,7 +159,8 @@ Two things to set up with the operator rather than silently:
   that no longer exists. Ask for two or three now, and tell them to add one each time they retire
   something — otherwise the documents that still describe the old way keep teaching every new
   agent to work that way.
-- **Install `weekly.timer.example`.** The sweep changes nothing, so it is safe unattended, and it
+- **Schedule the weekly sweep** (`weekly.timer.example` on Linux, `--schedule` on Windows, the
+  printed crontab line on macOS). The sweep changes nothing, so it is safe unattended, and it
   is what makes the status line able to alarm at all: it reports the age of the last sweep, so a
   dead timer becomes visible at the next session start instead of looking exactly like a store
   with nothing wrong in it. **`reconcile --apply` is never automated** — it closes commitments,
@@ -152,8 +168,10 @@ Two things to set up with the operator rather than silently:
 
 **`core/03-press` — the document engine.** Markdown in, a finished magazine-format document
 out, with a claim gate that fails the build when a stated fact stops tracing. Run its tests:
-`~/harness/.venv/bin/python -m pytest ~/harness/core/03-press/test_press_kit.py -q`, and the
-lane board's and the hygiene pass's: `~/harness/.venv/bin/python -m pytest ~/harness/core/05-lanes/test_lanes.py ~/harness/core/06-hygiene/test_hygiene.py -q`.
+`<python> -m pytest ~/harness/core/03-press/test_press_kit.py -q`, and the lane board's and the
+hygiene pass's: `<python> -m pytest ~/harness/core/05-lanes/test_lanes.py ~/harness/core/06-hygiene/test_hygiene.py -q`.
+The PDF step uses Chrome, Chromium or Microsoft Edge, whichever it finds (set `PRESS_BROWSER` to
+point at one elsewhere); without any of them the HTML still builds.
 
 **`core/00-agreement` — the operating agreement.** Copy `CLAUDE.md.template` to
 `~/.claude/CLAUDE.md` and fill every `<<ANGLE BRACKET>>` from the Phase 0 answers. Leave no
@@ -194,35 +212,31 @@ used to argue something it cannot carry.
 `limit` exists because an analyst must sometimes end on an explicitly bounded *I do not know*.
 Turning every unresolved limit into queued work distorts the record rather than improving it.
 
-Wire the Stop hook into `~/.claude/settings.json` (user scope, never the repo):
+The installer has already wired this into `~/.claude/settings.json` (user scope, never the
+repo): a Stop hook that runs `core/02-session/stop_guard.py`, and two SessionStart hooks, the
+store digest and the hygiene status line. Open the file and show the operator the entries. They
+look like this, with absolute paths:
 
 ```json
-{
-  "env": { "HARNESS_HOME": "~/harness",
-           "HARNESS_WORK_STORE": "~/harness/store/work",
-           "HARNESS_META_STORE": "~/harness/store/meta" },
-  "hooks": {
-    "SessionStart": [{ "hooks": [
-      { "type": "command",
-        "command": "~/harness/.venv/bin/python ~/harness/core/01-memory/session_context.py" },
-      { "type": "command",
-        "command": "~/harness/.venv/bin/python ~/harness/core/06-hygiene/hygiene.py status" }
-    ]}],
-    "Stop": [{ "hooks": [
-      { "type": "command",
-        "command": "~/harness/core/02-session/unfinished-work-stop-guard.sh" }
-    ]}]
-  }
-}
+"Stop": [{ "hooks": [
+  { "type": "command",
+    "command": "C:\\Users\\First Last\\harness\\.venv\\Scripts\\python.exe",
+    "args": ["C:\\Users\\First Last\\harness\\core\\02-session\\stop_guard.py"] }
+]}]
 ```
 
-If a `settings.json` already exists, MERGE — read it, add these keys, write it back. Never
-overwrite one.
+The `args` array is deliberate. With it, Claude Code starts the interpreter directly and no shell
+is involved, so there is no `~` to expand, no quoting to get wrong around a space in the home
+directory, and no dependency on bash, which a Windows machine may not have. **Do not hand-edit
+these into shell-form strings.** If they need to change, re-run the installer.
+
+An older install wired the Stop hook to `unfinished-work-stop-guard.sh`. That script still works
+on macOS and Linux and now just runs `stop_guard.py`; a re-run of the installer replaces the entry.
 
 ## Phase 3 — Verify, and report honestly
 
 ```bash
-~/harness/.venv/bin/python ~/harness/verify.py
+<python> ~/harness/verify.py
 ```
 
 It checks each component and prints a pass table. Report the table verbatim. **Do not

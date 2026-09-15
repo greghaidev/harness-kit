@@ -9,6 +9,7 @@ worktree, ends "cleanly", and leaves its only durable product with no provenance
 Same invariant. Different state.
 """
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -42,7 +43,7 @@ def transcript(tmpdir, calls):
         lines.append(json.dumps({"type": "assistant", "message": {
             "role": "assistant", "content": [
                 {"type": "tool_use", "name": name, "input": {key: arg}}]}}))
-    p.write_text("\n".join(lines))
+    p.write_text("\n".join(lines), encoding="utf-8")
     return str(p)
 
 
@@ -50,7 +51,17 @@ def cont(proj, *args):
     return subprocess.run(
         [sys.executable, str(HERE / "continuation.py"), "--session", "s1", *args],
         capture_output=True, text=True,
-        env={"CLAUDE_PROJECT_DIR": proj, "PATH": "/usr/bin:/bin"})
+        env=_bare_env(CLAUDE_PROJECT_DIR=proj), encoding="utf-8", errors="replace")
+
+
+def _bare_env(**kw):
+    """Nothing inherited from the running session (no CLAUDE_SESSION_ID leaking in). Windows
+    cannot start Python without SYSTEMROOT, so that one is carried over where it exists."""
+    env = {"PATH": os.defpath, **kw}
+    for key in ("SYSTEMROOT", "WINDIR"):
+        if key in os.environ:
+            env[key] = os.environ[key]
+    return env
 
 
 def stop(proj, tp=""):
@@ -151,5 +162,5 @@ def test_claim_closes_open_items_so_the_guard_sees_one_answer(proj):
 def test_does_not_establish_is_persisted(proj):
     cont(proj, "claim", "churn fell", "--source", "q.sql",
          "--does-not-establish", "that the fix caused it")
-    data = json.loads((pathlib.Path(proj) / ".claude/state/continuation/s1.json").read_text())
+    data = json.loads((pathlib.Path(proj) / ".claude/state/continuation/s1.json").read_text(encoding="utf-8"))
     assert data["claims"][0]["does_not_establish"] == "that the fix caused it"

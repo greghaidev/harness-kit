@@ -79,7 +79,9 @@ force. Everything site-specific lives there and nowhere else, because the altern
 `repo` is what makes "did this ship" answerable. Without it every ground-truth check reports
 SKIPPED — loudly, and it will not block you, but the board stops being able to close anything by
 itself. `pr_cli` is any `gh`-compatible command; set it to `null` on a host without one and
-branch-ancestry detection carries the load alone.
+branch-ancestry detection carries the load alone. It may also be an argument list, such as
+`["python", "C:/tools/gh_shim.py"]`, for a CLI that is a script rather than a program: Windows
+starts only real executables by name.
 
 `agent_auto_approve_tiers` is the one setting worth thinking about twice. An agent-filed item at a
 pre-cleared tier enters `approved` without a click. Approval is only dispatch-eligibility, so this

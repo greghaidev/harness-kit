@@ -192,7 +192,7 @@ def test_line_count_matches_wc_l():
     out, problems = claims.resolve("{{lines:README.md}}", REPO)
     assert problems == []
     wc = int(subprocess.run(["wc", "-l", str(REPO / "README.md")],
-                            capture_output=True, text=True).stdout.split()[0])
+                            capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.split()[0])
     assert out.strip() == f"{wc:,}"
 
 

@@ -109,7 +109,7 @@ def _load_config():
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
     if CONFIG_PATH.exists():
         try:
-            user = json.loads(CONFIG_PATH.read_text())
+            user = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         except Exception as e:
             sys.exit(f"lanes.py: {CONFIG_PATH} is not readable JSON ({e}).")
         for k, v in user.items():
@@ -130,6 +130,12 @@ _ORIGINS = tuple(CFG["origins"])
 _REPO = Path(os.path.expanduser(CFG["repo"])) if CFG.get("repo") else None
 _TRUNK = CFG.get("trunk") or "origin/main"
 _PR_CLI = CFG.get("pr_cli") or None
+
+
+def _pr_cli_argv():
+    """`pr_cli` is a program name, or an argv list such as ["python", "gh_shim.py"] for a CLI that
+    cannot be started by name — any script on Windows, where only real executables can be."""
+    return list(_PR_CLI) if isinstance(_PR_CLI, (list, tuple)) else [_PR_CLI]
 _AUTO_TIERS = {t.lower() for t in CFG.get("agent_auto_approve_tiers") or []}
 _BUDGET_AWAITING = int(CFG["budget"]["awaiting_operator"])
 _BUDGET_FOLLOWUPS = int(CFG["budget"]["open_followups"])
@@ -672,9 +678,9 @@ def _pr_index():
     if _PR_CLI and _repo_ready():
         try:
             raw = subprocess.run(
-                [_PR_CLI, "pr", "list", "--state", "all", "--limit", "1000", "--json",
+                [*_pr_cli_argv(), "pr", "list", "--state", "all", "--limit", "1000", "--json",
                  "number,state,title,headRefName,mergedAt"],
-                cwd=_REPO, capture_output=True, text=True, timeout=60).stdout
+                cwd=_REPO, capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace").stdout
             idx = {p["number"]: p for p in json.loads(raw)}
         except Exception:
             idx = None
@@ -687,9 +693,9 @@ def _open_prs():
         return None
     try:
         raw = subprocess.run(
-            [_PR_CLI, "pr", "list", "--state", "open", "--json",
+            [*_pr_cli_argv(), "pr", "list", "--state", "open", "--json",
              "number,title,createdAt,mergeable,isDraft,headRefName"],
-            cwd=_REPO, capture_output=True, text=True, timeout=60).stdout
+            cwd=_REPO, capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace").stdout
         return json.loads(raw)
     except Exception:
         return None
@@ -1746,4 +1752,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # A Windows pipe defaults to the ANSI code page, and Claude Code reads hook output as
+    # UTF-8; one printed arrow or em dash would otherwise crash the hook.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     main()

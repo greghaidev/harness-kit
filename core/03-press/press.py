@@ -374,14 +374,14 @@ def main() -> int:
     a = ap.parse_args()
 
     root = pathlib.Path(a.repo_root) if a.repo_root else HERE.parents[2]
-    src = pathlib.Path(a.source).read_text()
+    src = pathlib.Path(a.source).read_text(encoding="utf-8")
     doc, problems, stats = render(
         src, root, title=a.title, wordmark=a.wordmark, eyebrow=a.eyebrow,
         dateline=a.dateline, standfirst_label=a.standfirst_label,
         standfirst=a.standfirst, promise=a.promise)
 
     out = pathlib.Path(a.out)
-    out.write_text(doc)
+    out.write_text(doc, encoding="utf-8")
     print(f"wrote {out} — {stats['chars']:,} chars · {stats['sections']} sections · "
           f"{stats['tables']} tables · {stats['code_blocks']} code blocks · "
           f"{stats['pulls']} pull statements · {stats['plates']} plates · "
@@ -398,4 +398,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # A Windows pipe defaults to the ANSI code page, and Claude Code reads hook output as
+    # UTF-8; one printed arrow or em dash would otherwise crash the hook.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     raise SystemExit(main())

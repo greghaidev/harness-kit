@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """continuation.py — the session's own work queue, enforced by a Stop hook.
 
-Declare multi-step work here and `.claude/hooks/unfinished-work-stop-guard.sh` refuses
+Declare multi-step work here and the Stop hook (`core/02-session/stop_guard.py`) refuses
 to let the turn end while items remain open. That is the whole point: continuation
 stops depending on the agent remembering to continue.
 
@@ -270,4 +270,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # A Windows pipe defaults to the ANSI code page, and Claude Code reads hook output as
+    # UTF-8; one printed arrow or em dash would otherwise crash the hook.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     raise SystemExit(main())

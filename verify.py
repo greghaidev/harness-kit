@@ -60,7 +60,7 @@ def _no_repo_footprint():
     """The constraint that protects your teammates. Checked, not assumed."""
     cwd = pathlib.Path.cwd()
     root = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                          capture_output=True, text=True, cwd=cwd)
+                          capture_output=True, text=True, cwd=cwd, encoding="utf-8", errors="replace")
     if root.returncode != 0:
         return True, "not inside a git repo — nothing to contaminate"
     top = pathlib.Path(root.stdout.strip())
@@ -101,7 +101,7 @@ def _store_commits():
     store = sys.modules["agentos_store"]
     root = store._root_for("work")
     log = subprocess.run(["git", "log", "--oneline", "-1"],
-                         capture_output=True, text=True, cwd=root)
+                         capture_output=True, text=True, cwd=root, encoding="utf-8", errors="replace")
     return log.returncode == 0 and bool(log.stdout.strip()), log.stdout.strip() or "no commits"
 
 
@@ -110,7 +110,7 @@ def _store_boundary():
     p = CORE / "01-memory" / "store_test.py"
     if not p.exists():
         return False, "store_test.py missing"
-    r = subprocess.run([sys.executable, str(p)], capture_output=True, text=True, timeout=300)
+    r = subprocess.run([sys.executable, str(p)], capture_output=True, text=True, timeout=300, encoding="utf-8", errors="replace")
     tail = (r.stdout or r.stderr).strip().splitlines()[-1:] or [""]
     return r.returncode == 0, tail[0][:120]
 
@@ -132,7 +132,7 @@ def _retarget_blocks():
         t = pathlib.Path(d) / "t.jsonl"
         t.write_text(json.dumps({"message": {"role": "assistant", "content": [
             {"type": "tool_use", "name": "Bash",
-             "input": {"command": "psql -c 'select count(*) from orders'"}}]}}))
+             "input": {"command": "psql -c 'select count(*) from orders'"}}]}}), encoding="utf-8")
         got = u.decide_stop({"session_id": "v", "transcript_path": str(t),
                              "stop_hook_active": False}, project_dir=d)
     return got["block"] is True, f"reason={got['reason']}"
@@ -145,7 +145,7 @@ def _retarget_releases():
         q = pathlib.Path(d) / ".claude/state/continuation"
         q.mkdir(parents=True)
         (q / "v.json").write_text(json.dumps(
-            {"items": [], "claims": [{"statement": "x", "source": "y"}]}))
+            {"items": [], "claims": [{"statement": "x", "source": "y"}]}), encoding="utf-8")
         got = u.decide_stop({"session_id": "v", "transcript_path": "",
                              "stop_hook_active": False}, project_dir=d)
     return got["block"] is False and got["reason"] == "declared_claim", f"reason={got['reason']}"
@@ -159,7 +159,7 @@ def _retarget_no_false_positive():
         (pathlib.Path(d) / ".claude/state/continuation").mkdir(parents=True)
         t = pathlib.Path(d) / "t.jsonl"
         t.write_text(json.dumps({"message": {"role": "assistant", "content": [
-            {"type": "tool_use", "name": "Bash", "input": {"command": "git status"}}]}}))
+            {"type": "tool_use", "name": "Bash", "input": {"command": "git status"}}]}}), encoding="utf-8")
         got = u.decide_stop({"session_id": "v", "transcript_path": str(t),
                              "stop_hook_active": False}, project_dir=d)
     return got["block"] is False, f"reason={got['reason']}"
@@ -167,12 +167,23 @@ def _retarget_no_false_positive():
 
 @check("02-session", "Stop hook is wired in ~/.claude/settings.json")
 def _hook_wired():
-    p = pathlib.Path(os.path.expanduser("~/.claude/settings.json"))
+    p = pathlib.Path.home() / ".claude" / "settings.json"
     if not p.exists():
-        return False, "no ~/.claude/settings.json"
-    blob = p.read_text()
-    return "unfinished-work-stop-guard" in blob, "Stop hook present" if \
-        "unfinished-work-stop-guard" in blob else "Stop hook NOT wired"
+        return False, f"no {p}"
+    try:
+        settings = json.loads(p.read_text(encoding="utf-8"))
+    except ValueError as e:
+        return False, f"{p} is not valid JSON: {e}"
+    wired = []
+    for group in (settings.get("hooks") or {}).get("Stop") or []:
+        for h in group.get("hooks") or []:
+            wired.append(" ".join([str(h.get("command", ""))] + [str(a) for a in h.get("args") or []]))
+    ours = [w for w in wired if "stop_guard.py" in w or "unfinished-work-stop-guard" in w]
+    if not ours:
+        return False, "Stop hook NOT wired"
+    if os.name == "nt" and any(w.rstrip().endswith(".sh") for w in ours):
+        return False, "Stop hook points at the bash shim, which Windows cannot run — re-run install.py"
+    return True, "Stop hook present"
 
 
 # ---------------------------------------------------------------- press
@@ -195,9 +206,9 @@ def _press_gate_fails():
 
 @check("03-press", "PDF renderer is available", required=False)
 def _press_pdf():
-    chrome = (shutil.which("google-chrome") or shutil.which("chromium")
-              or shutil.which("chromium-browser"))
-    return bool(chrome), chrome or "no chrome/chromium — HTML still builds, PDF will not"
+    to_pdf = _load(CORE / "03-press" / "to_pdf.py", "to_pdf")
+    browser = to_pdf.find_browser()
+    return bool(browser), browser or "no Chrome, Chromium or Edge — HTML still builds, PDF will not"
 
 
 # ---------------------------------------------------------------- journal
@@ -211,31 +222,45 @@ def _journal():
     with tempfile.TemporaryDirectory() as d:
         env["CLAUDE_PROJECT_DIR"] = d
         a = subprocess.run([sys.executable, str(jp), "note", "harness verify probe",
-                            "--kind", "friction"], capture_output=True, text=True, env=env)
+                            "--kind", "friction"], capture_output=True, text=True, env=env, encoding="utf-8", errors="replace")
         b = subprocess.run([sys.executable, str(jp), "roll"],
-                           capture_output=True, text=True, env=env)
+                           capture_output=True, text=True, env=env, encoding="utf-8", errors="replace")
     ok = a.returncode == 0 and b.returncode == 0 and "harness verify probe" in b.stdout
     return ok, (a.stderr or b.stderr or "note -> roll -> day round-tripped")[:110]
 
 
 @check("04-journal", "the Stop guard rolls the day, and cannot be broken by it")
 def _journal_wired():
-    body = (CORE / "02-session" / "unfinished-work-stop-guard.sh").read_text()
-    line = [l for l in body.split("\n") if "$JOURNAL" in l and " roll" in l]
-    if not line:
-        return False, "Stop guard does not invoke the journal"
-    l = line[0]
-    safe = "|| true" in l and ">/dev/null" in l and "timeout" in l and l.rstrip().endswith("&")
-    return safe, "backgrounded, timed out, output discarded" if safe else f"UNSAFE: {l.strip()}"
+    """Run the real guard against a journal that hangs and then fails. The stop must come back
+    quickly and still decide; a guard that waited on its journal could hold every turn hostage."""
+    import time
+    guard = CORE / "02-session" / "stop_guard.py"
+    if not guard.exists():
+        return False, "stop_guard.py missing"
+    with tempfile.TemporaryDirectory() as d:
+        broken = pathlib.Path(d) / "broken_journal.py"
+        broken.write_text("import time, sys\ntime.sleep(25)\nsys.exit(1)\n", encoding="utf-8")
+        (pathlib.Path(d) / ".claude/state/continuation").mkdir(parents=True)
+        t0 = time.monotonic()
+        r = subprocess.run([sys.executable, str(guard)], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=60,
+                           input=json.dumps({"session_id": "v", "transcript_path": "",
+                                             "stop_hook_active": False}),
+                           env={**os.environ, "CLAUDE_PROJECT_DIR": d,
+                                "HARNESS_STOP_GUARD_JOURNAL": str(broken)})
+        took = time.monotonic() - t0
+    ok = r.returncode == 0 and took < 15
+    return ok, (f"stop decided in {took:.1f}s with the journal hanging" if ok
+                else f"UNSAFE: rc={r.returncode}, {took:.1f}s {r.stderr.strip()[:60]}")
 
 
 # ---------------------------------------------------------------- agreement
 @check("00-agreement", "operating agreement is installed and fully filled in")
 def _agreement():
-    p = pathlib.Path(os.path.expanduser("~/.claude/CLAUDE.md"))
+    p = pathlib.Path.home() / ".claude" / "CLAUDE.md"
     if not p.exists():
         return False, "no ~/.claude/CLAUDE.md"
-    body = p.read_text()
+    body = p.read_text(encoding="utf-8")
     left = body.count("<<")
     return left == 0, "complete" if left == 0 else f"{left} placeholder(s) still unfilled"
 
@@ -264,7 +289,7 @@ def _lanes_sandbox(*args, **kw):
         runs = []
         for argv in args:
             runs.append(subprocess.run([sys.executable, str(CORE / "05-lanes" / "lanes.py"), *argv],
-                                       capture_output=True, text=True, env=env, timeout=120))
+                                       capture_output=True, text=True, env=env, timeout=120, encoding="utf-8", errors="replace"))
         return runs
     finally:
         shutil.rmtree(d, ignore_errors=True)
@@ -274,7 +299,7 @@ def _lanes_sandbox(*args, **kw):
 def _lanes_runs():
     r = subprocess.run([sys.executable, str(CORE / "05-lanes" / "lanes.py"), "board"],
                        capture_output=True, text=True, timeout=120,
-                       env={**os.environ, "HARNESS_HOME": str(HOME)})
+                       env={**os.environ, "HARNESS_HOME": str(HOME)}, encoding="utf-8", errors="replace")
     ok = r.returncode == 0 and "Lane board" in r.stdout
     return ok, (r.stderr.strip().splitlines() or ["rendered"])[-1][:110] if not ok else "rendered"
 
@@ -335,14 +360,14 @@ def _hygiene_sandbox(*args, **kw):
                         ["config", "user.name", "t"]):
                 subprocess.run(["git", *cmd], cwd=d / t, check=True,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        (d / "lanes.json").write_text(json.dumps(kw.pop("config", {})))
+        (d / "lanes.json").write_text(json.dumps(kw.pop("config", {})), encoding="utf-8")
         env = {**os.environ, "HARNESS_HOME": str(HOME),
                "HARNESS_WORK_STORE": str(d / "work"), "HARNESS_META_STORE": str(d / "meta"),
                "HARNESS_LANES_CONFIG": str(d / "lanes.json"),
                "HARNESS_HYGIENE_STATE": str(d / "state"), **kw}
         runs = [subprocess.run(
             [sys.executable, str(CORE / "06-hygiene" / "hygiene.py"), *argv],
-            capture_output=True, text=True, env=env, timeout=120) for argv in args]
+            capture_output=True, text=True, env=env, timeout=120, encoding="utf-8", errors="replace") for argv in args]
         return runs, d
     finally:
         if not kw.get("_keep"):
@@ -369,7 +394,7 @@ def _hygiene_refuses():
 def _hygiene_status_safe():
     r = subprocess.run([sys.executable, str(CORE / "06-hygiene" / "hygiene.py"), "status"],
                        capture_output=True, text=True, timeout=60,
-                       env={**os.environ, "HARNESS_HOME": "/nonexistent-harness"})
+                       env={**os.environ, "HARNESS_HOME": "/nonexistent-harness"}, encoding="utf-8", errors="replace")
     return r.returncode == 0, "exits 0 with no store" if r.returncode == 0 else r.stderr[:110]
 
 
@@ -393,4 +418,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # A Windows pipe defaults to the ANSI code page, and Claude Code reads hook output as
+    # UTF-8; one printed arrow or em dash would otherwise crash the hook.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     raise SystemExit(main())

@@ -114,7 +114,8 @@ ends up with two answers.
 }
 ```
 
-`hygiene config` prints what is in force.
+`hygiene config` prints what is in force. `pr_cli` accepts an argument list as well as a program
+name, exactly as the board's does (see the lanes README).
 
 **`retired_phrases` ships empty, and the sweep says so in its report** rather than printing a clean
 section. Yours are specific to you — the name of a process you abandoned, a tool you stopped using,

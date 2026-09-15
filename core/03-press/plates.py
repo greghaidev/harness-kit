@@ -41,7 +41,7 @@ _missing: list[str] = []
 def _manifest() -> dict:
     if not MANIFEST.exists():
         return {"hero": None, "plates": {}}
-    return json.loads(MANIFEST.read_text())
+    return json.loads(MANIFEST.read_text(encoding="utf-8"))
 
 
 def _find(key: str) -> pathlib.Path | None:

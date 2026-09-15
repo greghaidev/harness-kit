@@ -19,6 +19,20 @@ which proves each component on the machine it landed on rather than asserting it
 
 Everything lands in `~/.claude/` and `~/harness/`. **Nothing goes in your team's repo.**
 
+## Platforms
+
+Windows, macOS and Linux, from the same instructions. You need Python 3.10 or newer and Git
+(on Windows, the python.org installer and Git for Windows). `python install.py` (`py install.py`
+on Windows) does the mechanical part: it copies the kit, builds its virtual environment, and
+merges the hooks into your Claude Code settings without disturbing anything already there. The
+hooks are Python started directly by Claude Code, not shell scripts, so nothing depends on bash.
+Every change is tested on all three systems, including a real install followed by `verify.py`.
+
+Two things are scheduled differently per system. The weekly hygiene sweep and the daily journal
+roll use Task Scheduler on Windows (`py install.py --schedule`), a crontab line on macOS, and the
+systemd examples on Linux; the installer prints what applies. The PDF renderer looks for Chrome,
+Chromium or Microsoft Edge.
+
 ## What gets installed
 
 | | |
